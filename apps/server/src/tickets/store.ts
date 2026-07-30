@@ -8,6 +8,24 @@ export const ticketEvents = new EventEmitter();
 
 const ORPHAN_STATUSES: TicketStatus[] = ["queued", "assigned", "running"];
 
+// 같은 티켓에 대한 상태 변경(전이/메타 갱신)을 순서대로 처리하기 위한 락.
+// 러너 재연결 시 recoverAndAssign과 소켓 메시지 핸들러가 동시에 같은 티켓을 건드릴 수 있어
+// (예: 새 연결의 assign 시도와 직원이 보낸 job_status가 겹침) 직렬화가 필요하다.
+const ticketLocks = new Map<string, Promise<unknown>>();
+
+function withTicketLock<T>(id: string, fn: () => Promise<T>): Promise<T> {
+  const prev = ticketLocks.get(id) ?? Promise.resolve();
+  const run = prev.then(fn);
+  ticketLocks.set(
+    id,
+    run.then(
+      () => undefined,
+      () => undefined
+    )
+  );
+  return run;
+}
+
 function toTicket(row: {
   id: string;
   role: string;
@@ -75,17 +93,44 @@ export async function findOrphaned(): Promise<Ticket[]> {
 }
 
 export async function transitionTicket(id: string, to: TicketStatus): Promise<Ticket> {
-  const current = await prisma.ticket.findUniqueOrThrow({ where: { id } });
-  const from = current.status as TicketStatus;
-  if (!canTransition(from, to)) {
-    throw new Error(`invalid ticket transition ${from} -> ${to} (ticket ${id})`);
-  }
-  const row = await prisma.ticket.update({ where: { id }, data: { status: to } });
-  const ticket = toTicket(row);
-  ticketEvents.emit("changed", ticket);
-  return ticket;
+  return withTicketLock(id, async () => {
+    const current = await prisma.ticket.findUniqueOrThrow({ where: { id } });
+    const from = current.status as TicketStatus;
+    if (!canTransition(from, to)) {
+      throw new Error(`invalid ticket transition ${from} -> ${to} (ticket ${id})`);
+    }
+    const row = await prisma.ticket.update({ where: { id }, data: { status: to } });
+    const ticket = toTicket(row);
+    ticketEvents.emit("changed", ticket);
+    return ticket;
+  });
+}
+
+// 큐에 있던 티켓을 "배정됨"으로 표시한다. 이미 assigned/running 등으로 넘어갔다면
+// (동시에 들어온 다른 assign 시도가 먼저 처리된 경우) 조용히 현재 상태를 그대로 반환한다.
+export async function ensureAssigned(id: string): Promise<Ticket> {
+  return withTicketLock(id, async () => {
+    const current = await prisma.ticket.findUniqueOrThrow({ where: { id } });
+    if (current.status !== "queued") return toTicket(current);
+    const row = await prisma.ticket.update({ where: { id }, data: { status: "assigned" } });
+    const ticket = toTicket(row);
+    ticketEvents.emit("changed", ticket);
+    return ticket;
+  });
 }
 
 export async function recordHeartbeat(id: string): Promise<void> {
   await prisma.ticket.update({ where: { id }, data: { lastHeartbeatAt: new Date() } });
+}
+
+export async function updateMeta(
+  id: string,
+  meta: { worktreePath?: string; sessionId?: string }
+): Promise<Ticket> {
+  return withTicketLock(id, async () => {
+    const row = await prisma.ticket.update({ where: { id }, data: meta });
+    const ticket = toTicket(row);
+    ticketEvents.emit("changed", ticket);
+    return ticket;
+  });
 }

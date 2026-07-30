@@ -6,7 +6,8 @@ if (!message) {
   process.exit(1);
 }
 
-const result = await invokeManager(message);
-console.log("session:", result.sessionId);
+const result = await invokeManager(message, (line) => console.log(line));
+console.log("\nsession:", result.sessionId, "| success:", result.success);
 console.log("\n--- result ---\n");
 console.log(result.resultText);
+if (!result.success) process.exit(1);

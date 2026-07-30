@@ -1,7 +1,7 @@
-import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadAgentDefinition } from "../agents/load.js";
+import { runClaudeHeadless } from "../claude/headless.js";
 import { readSessionId, writeSessionId } from "./session.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -21,7 +21,7 @@ const MCP_TOOL_NAMES = ["list_projects", "create_ticket", "get_ticket", "list_ti
 export interface ManagerResult {
   sessionId: string;
   resultText: string;
-  events: unknown[];
+  success: boolean;
 }
 
 function buildMcpConfig(): string {
@@ -42,72 +42,24 @@ function buildMcpConfig(): string {
 
 // 사용자 메시지(또는 직원의 blocked/report 이벤트)로 팀장을 깨운다.
 // 세션이 있으면 --resume으로 이어가고, 없으면 새로 시작한다.
-export async function invokeManager(message: string): Promise<ManagerResult> {
+export async function invokeManager(
+  message: string,
+  onEvent?: (line: string) => void
+): Promise<ManagerResult> {
   const agent = await loadAgentDefinition(AGENT_DEFINITION_PATH);
   const previousSessionId = await readSessionId();
 
-  const allowedTools = [...agent.allowedTools, ...MCP_TOOL_NAMES].join(",");
-
-  const args = [
-    "-p",
+  const result = await runClaudeHeadless({
     message,
-    "--output-format",
-    "stream-json",
-    "--verbose",
-    "--mcp-config",
-    buildMcpConfig(),
-    "--permission-mode",
-    "dontAsk",
-    "--allowedTools",
-    allowedTools,
-    "--append-system-prompt",
-    agent.prompt,
-  ];
-  if (previousSessionId) {
-    args.push("--resume", previousSessionId);
-  }
-
-  return new Promise((resolve, reject) => {
-    const child = spawn("claude", args, { cwd: MANAGER_CWD });
-
-    let buffer = "";
-    let stderr = "";
-    let sessionId = previousSessionId ?? "";
-    let resultText = "";
-    const events: unknown[] = [];
-
-    child.stdout.on("data", (chunk: Buffer) => {
-      buffer += chunk.toString();
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        try {
-          const event = JSON.parse(line);
-          events.push(event);
-          if (typeof event.session_id === "string") sessionId = event.session_id;
-          if (event.type === "result" && typeof event.result === "string") {
-            resultText = event.result;
-          }
-        } catch {
-          // stream-json 라인 파싱 실패 - 부분 라인일 수 있으니 무시
-        }
-      }
-    });
-
-    child.stderr.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString();
-    });
-
-    child.on("error", reject);
-
-    child.on("close", async (code) => {
-      if (sessionId) await writeSessionId(sessionId);
-      if (code === 0) {
-        resolve({ sessionId, resultText, events });
-      } else {
-        reject(new Error(`claude exited with code ${code}: ${stderr || "(stderr 없음)"}`));
-      }
-    });
+    systemPrompt: agent.prompt,
+    allowedTools: [...agent.allowedTools, ...MCP_TOOL_NAMES],
+    permissionMode: "dontAsk",
+    cwd: MANAGER_CWD,
+    resumeSessionId: previousSessionId ?? undefined,
+    mcpConfigJson: buildMcpConfig(),
+    onEvent,
   });
+
+  if (result.sessionId) await writeSessionId(result.sessionId);
+  return result;
 }

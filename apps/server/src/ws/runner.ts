@@ -1,7 +1,15 @@
 import type { FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
 import type { RunnerToServerEvent, ServerToRunnerEvent } from "@ai-crew/shared";
-import { findOrphaned, getTicket, recordHeartbeat, ticketEvents, transitionTicket } from "../tickets/store.js";
+import {
+  ensureAssigned,
+  findOrphaned,
+  getTicket,
+  recordHeartbeat,
+  ticketEvents,
+  transitionTicket,
+  updateMeta,
+} from "../tickets/store.js";
 import { broadcastToUi } from "./ui.js";
 
 const runnerSockets = new Set<WebSocket>();
@@ -49,6 +57,12 @@ async function handleRunnerEvent(event: RunnerToServerEvent, app: FastifyInstanc
     broadcastToUi({ type: "log_line", ticketId: event.ticketId, line: event.line, ts: event.ts });
   } else if (event.type === "job_heartbeat") {
     await recordHeartbeat(event.ticketId);
+  } else if (event.type === "job_meta") {
+    const updated = await updateMeta(event.ticketId, {
+      worktreePath: event.worktreePath,
+      sessionId: event.sessionId,
+    });
+    broadcastToUi({ type: "ticket_updated", ticket: updated });
   }
 }
 
@@ -66,12 +80,14 @@ export async function pushToAnyRunner(ticketId: string) {
 }
 
 async function pushJob(socket: WebSocket, ticketId: string) {
-  let ticket = await getTicket(ticketId);
+  const ticket = await getTicket(ticketId);
   if (!ticket) return;
-  if (ticket.status === "queued") {
-    ticket = await transitionTicket(ticketId, "assigned");
-    broadcastToUi({ type: "ticket_updated", ticket });
+  // ensureAssigned는 락으로 직렬화되고, 이미 assigned/running이면 그대로 반환한다 -
+  // recoverAndAssign과 신규 티켓 이벤트가 동시에 같은 티켓을 밀어도 안전하다.
+  const assigned = ticket.status === "queued" ? await ensureAssigned(ticketId) : ticket;
+  if (assigned.status !== ticket.status) {
+    broadcastToUi({ type: "ticket_updated", ticket: assigned });
   }
-  const event: ServerToRunnerEvent = { type: "job_assign", ticket };
+  const event: ServerToRunnerEvent = { type: "job_assign", ticket: assigned };
   socket.send(JSON.stringify(event));
 }
