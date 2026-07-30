@@ -36,7 +36,8 @@ export type RunnerToServerEvent =
       success: boolean;
       content: string;
       sessionId?: string;
-    };
+    }
+  | { type: "create_project_result"; requestId: string; success: boolean; path?: string; error?: string };
 
 export type ServerToRunnerEvent =
   | { type: "job_assign"; ticket: Ticket }
@@ -53,4 +54,11 @@ export type ServerToRunnerEvent =
       message: string;
       // 이어서 쓰는 수정 요청이면 이전 초안의 세션 id (없으면 새 세션으로 시작).
       resumeSessionId?: string;
+    }
+  | {
+      type: "create_project_request";
+      requestId: string;
+      name: string;
+      gitUrl?: string;
+      stack?: string;
     };

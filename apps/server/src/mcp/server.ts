@@ -5,6 +5,7 @@ import { z } from "zod";
 import {
   askUser,
   createPlanningDoc,
+  createProject,
   createTicket,
   getTicket,
   listEmployees,
@@ -123,6 +124,28 @@ server.tool(
   async ({ employeeName, request }) => {
     const doc = await createPlanningDoc(TEAM_ID!, employeeName, request);
     return { content: [{ type: "text" as const, text: JSON.stringify(doc, null, 2) }] };
+  }
+);
+
+server.tool(
+  "create_project",
+  "list_projects에 없는 완전히 새 프로젝트를 만듭니다. 사용자가 git 저장소 주소를 줬으면 그 " +
+    "자리에 클론하고, 안 줬으면 새로 초기화합니다(git init). 저장소가 완전히 비어있어도(커밋이 " +
+    "하나도 없어도) 자동으로 초기 커밋을 만들어서 작업 가능한 상태로 준비합니다. stack을 " +
+    "지정하면(예: spring-boot-gradle) 이미 만들어둔 기본 코딩 컨벤션(CLAUDE.md, .claude/skills)이 " +
+    "자동으로 채워집니다 - 알고 있는 스택이면 항상 지정하세요. 완료되면 그 이름을 create_ticket의 " +
+    "project 값으로 그대로 쓰면 됩니다.",
+  {
+    name: z.string().describe("프로젝트 폴더 이름 (영문/숫자/.-_ 만 가능, WORKSPACE_ROOT 아래 생성됨)"),
+    gitUrl: z.string().optional().describe("클론할 git 저장소 주소. 없으면 새로 초기화합니다."),
+    stack: z
+      .enum(["spring-boot-gradle"])
+      .optional()
+      .describe("알려진 스택이면 기본 CLAUDE.md/.claude/skills가 자동으로 채워집니다"),
+  },
+  async ({ name, gitUrl, stack }) => {
+    const result = await createProject(name, gitUrl, stack);
+    return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
   }
 );
 

@@ -19,6 +19,7 @@ const MCP_TOOL_NAMES = [
   "list_projects",
   "list_employees",
   "create_ticket",
+  "create_project",
   "get_ticket",
   "list_tickets",
   "create_planning_doc",

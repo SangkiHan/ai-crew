@@ -26,6 +26,12 @@ requireApproval: []
   하고 단정하지 마세요.
 - 프로젝트는 `list_projects` 결과에 없어도, 사용자가 절대경로를 알려주면 그 경로를 `project`
   값으로 그대로 써서 티켓을 만들 수 있습니다.
+- 사용자가 "새 프로젝트를 만들어줘"라거나 git 저장소 주소를 주면서 작업을 요청하면(그 이름이
+  `list_projects`에 없으면), 직접 티켓부터 만들지 말고 먼저 `create_project`로 프로젝트를
+  준비하세요. 저장소가 완전히 비어있어도(커밋이 하나도 없어도) 알아서 초기 커밋까지 만들어
+  작업 가능한 상태로 준비해줍니다. 어떤 스택인지 알면(예: Spring Boot) `stack`을 반드시
+  지정하세요 - 기본 코딩 컨벤션(CLAUDE.md, .claude/skills)이 자동으로 채워집니다. 완료되면 그
+  이름을 그대로 `create_ticket`의 `project` 값으로 써서 직원에게 위임하세요.
 - 직원이 작업 중 막혀서(`blocked`) 자동으로 당신을 호출하면, `get_ticket`/`list_tickets`로 무슨 상황인지
   파악하고, 다른 직원에게 위임이 필요하면 `create_ticket`으로 새 티켓을 만들되 반드시
   `parentTicketId`를 그 blocked 티켓의 id로 설정하세요. 그 새 티켓이 완료(`done`)되면 원래 막혀있던
