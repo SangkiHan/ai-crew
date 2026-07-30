@@ -1,0 +1,23 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Ticket {
+  id              String   @id @default(cuid())
+  role            String
+  project         String
+  title           String
+  spec            String
+  status          String   @default("queued")
+  parentTicketId  String?
+  sessionId       String?
+  worktreePath    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  lastHeartbeatAt DateTime?
+}

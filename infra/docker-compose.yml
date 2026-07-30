@@ -1,0 +1,48 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: aicrew
+      POSTGRES_PASSWORD: aicrew
+      POSTGRES_DB: aicrew
+    volumes:
+      - aicrew-postgres:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  server:
+    build:
+      context: ..
+      dockerfile: apps/server/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://aicrew:aicrew@postgres:5432/aicrew
+      SERVER_PORT: 8080
+    depends_on:
+      - postgres
+    ports:
+      - "8080:8080"
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "127.0.0.1:5173:80"
+    depends_on:
+      - server
+
+  caddy:
+    image: caddy:2-alpine
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - aicrew-caddy-data:/data
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - server
+      - web
+
+volumes:
+  aicrew-postgres:
+  aicrew-caddy-data:

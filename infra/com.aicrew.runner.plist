@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- 5단계에서 launchd 상시 구동에 사용. NODE_PATH/실행 경로는 실제 nvm 경로에 맞춰 채운다. -->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.aicrew.runner</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/sangki/.nvm/versions/node/v24.14.0/bin/node</string>
+		<string>/Users/sangki/ai-crew/runner/dist/index.js</string>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>/Users/sangki/ai-crew/runner</string>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>StandardOutPath</key>
+	<string>/Users/sangki/ai-crew/runner.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/sangki/ai-crew/runner.error.log</string>
+</dict>
+</plist>

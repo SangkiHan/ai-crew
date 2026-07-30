@@ -1,0 +1,13 @@
+# 5단계(외부 노출)에서 Cloudflare Tunnel과 함께 완성.
+# 지금은 로컬 리버스 프록시 골격만 둔다 - 로그인 게이트는 5단계에서 추가.
+:80 {
+	handle /ws/* {
+		reverse_proxy server:8080
+	}
+	handle /health {
+		reverse_proxy server:8080
+	}
+	handle {
+		reverse_proxy web:80
+	}
+}
