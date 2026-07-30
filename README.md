@@ -11,17 +11,35 @@
 git clone https://github.com/SangkiHan/ai-crew.git
 cd ai-crew
 pnpm install
-node scripts/setup.mjs        # 처음 한 번: AI 직원들이 작업할 프로젝트 폴더 경로를 물어보고 .env 생성
-docker compose -f infra/docker-compose.yml up -d --build
-DATABASE_URL="postgresql://aicrew:aicrew@localhost:5432/aicrew" \
-  pnpm --filter @ai-crew/server exec prisma db push   # 최초 1회, DB 테이블 생성
-
-# 별도 터미널에서 (호스트에서 직접 실행 - JDK/Gradle/git worktree/claude·gemini·codex CLI를 그대로 써야 함)
-pnpm --filter @ai-crew/runner dev
+pnpm start
 ```
+
+`pnpm start` 하나로 다음이 순서대로 자동 진행된다:
+
+1. `.env`가 없으면 먼저 `scripts/setup.mjs`를 실행해 AI 직원들이 작업할 프로젝트 폴더 경로
+   (`WORKSPACE_ROOT`)를 물어보고 `.env`를 만든다.
+2. `docker compose up -d --build`로 postgres/server/web/caddy 4개 컨테이너를 백그라운드로 띄운다.
+3. 서버가 `/health`에 응답할 때까지 최대 60초 기다린다.
+4. `prisma db push`로 DB 스키마를 동기화한다 (이미 최신이면 아무 일도 안 함 — 몇 번을 다시 실행해도
+   안전하다).
+5. 마지막으로 **러너**(`pnpm --filter @ai-crew/runner dev`)를 이 터미널에 포그라운드로 이어받아
+   로그가 그대로 보인다.
+
+`Ctrl+C`로 멈추면 **러너만** 멈춘다 — docker로 띄운 서버/DB/웹은 계속 떠 있는다. 전부 내리고 싶으면:
+
+```bash
+docker compose -f infra/docker-compose.yml down
+```
+
+다시 시작할 때는(이미 `.env`가 있으므로) `pnpm start` 한 번이면 된다. 컨테이너를 새로 빌드할 필요가
+없을 때도 그냥 `pnpm start`를 다시 돌리면 되고(변경 없으면 build 단계는 캐시로 빠르게 끝남), DB
+데이터는 volume에 남아있으니 그대로 이어진다.
 
 브라우저에서 `http://localhost` 접속 → 우측 상단 **"직원 관리"** 로 직원을 추가하고, 하단 채팅창에
 팀장에게 할 일을 말하면 된다.
+
+> 각 단계를 손으로 따로 실행하고 싶다면(디버깅 등) 아래 "로컬 실행 (자세히)"에 `pnpm start`가
+> 내부적으로 하는 동작을 단계별 명령으로 풀어놓았다.
 
 **절대경로를 직접 입력해야 하는 곳은 딱 하나, `.env`의 `WORKSPACE_ROOT`뿐이다** (`node scripts/setup.mjs`가
 물어봐서 자동으로 채워준다. 나중에 바꾸고 싶으면 `.env` 파일을 직접 열어 수정). 그 외 포트/DB 접속 정보는
@@ -173,6 +191,9 @@ queued(대기) → assigned(배정) → running(작업중) ─┬→ review(검�
 켜주면 해결된다.** 러너를 상시 구동시키기 전에 반드시 해줘야 한다.
 
 ## 로컬 실행 (자세히)
+
+`pnpm start`가 아래 단계를 자동으로 순서대로 실행해준다 (`scripts/start.mjs`). 디버깅 등으로 한 단계씩
+직접 실행하고 싶을 때 참고:
 
 ```bash
 node scripts/setup.mjs   # 최초 1회 - WORKSPACE_ROOT를 물어보고 .env 생성
