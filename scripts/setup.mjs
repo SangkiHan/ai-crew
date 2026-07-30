@@ -32,11 +32,10 @@ async function main() {
   writeFileSync(ENV_PATH, content);
 
   console.log(`\n.env 생성 완료 (WORKSPACE_ROOT=${workspaceRoot}).`);
-  console.log("이제 아래를 실행하세요:\n");
-  console.log("  docker compose -f infra/docker-compose.yml up -d --build");
-  console.log("  pnpm install");
-  console.log("  pnpm --filter @ai-crew/runner dev   # 별도 터미널에서, 호스트 직접 실행\n");
-  console.log("자세한 내용은 README.md를 참고하세요.");
+  if (process.env.AI_CREW_SKIP_SETUP_HINT !== "1") {
+    console.log("이제 `pnpm start`로 전체 서비스를 띄우세요 (Docker Desktop이 켜져 있어야 합니다).");
+    console.log("자세한 내용은 README.md를 참고하세요.");
+  }
 }
 
 main().catch((err) => {
