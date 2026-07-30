@@ -28,9 +28,16 @@ server.tool(
     project: z.string().describe("대상 프로젝트 이름 (list_projects 결과 중 하나)"),
     title: z.string().describe("티켓 제목"),
     spec: z.string().describe("직원에게 전달할 구체적인 작업 지시"),
+    parentTicketId: z
+      .string()
+      .optional()
+      .describe(
+        "이 티켓이 다른 blocked 티켓을 풀어주기 위한 것이라면 그 티켓의 id. " +
+          "이 티켓이 done이 되면 원래 티켓이 자동으로 재개됩니다."
+      ),
   },
-  async ({ role, project, title, spec }) => {
-    const ticket = await createTicket({ role, project, title, spec });
+  async ({ role, project, title, spec, parentTicketId }) => {
+    const ticket = await createTicket({ role, project, title, spec, parentTicketId });
     return { content: [{ type: "text" as const, text: JSON.stringify(ticket, null, 2) }] };
   }
 );

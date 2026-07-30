@@ -39,3 +39,8 @@ export const TICKET_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
 export function canTransition(from: TicketStatus, to: TicketStatus): boolean {
   return TICKET_TRANSITIONS[from].includes(to);
 }
+
+// 러너(워크트리 생성)와 서버(머지 요청) 양쪽에서 같은 브랜치명을 계산해야 해서 여기 하나로 둔다.
+export function ticketBranchName(ticketId: string): string {
+  return `ai-crew/${ticketId}`;
+}
