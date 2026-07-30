@@ -137,8 +137,8 @@ export function EmployeeManager({ onClose }: { onClose: () => void }) {
 
               {selectedDriverStatus && !selectedDriverStatus.installed && (
                 <div className="rounded-md border border-amber-700/50 bg-amber-900/20 px-3 py-2 text-xs text-amber-300">
-                  이 맥에 {DRIVER_OPTIONS.find((d) => d.value === driver)?.label}가 설치되어 있지 않은 것
-                  같습니다. 터미널에서 아래 명령으로 설치하고 로그인한 뒤 다시 확인해주세요
+                  러너가 실행 중인 이 컴퓨터에 {DRIVER_OPTIONS.find((d) => d.value === driver)?.label}가
+                  설치되어 있지 않은 것 같습니다. 터미널에서 아래 명령으로 설치하고 로그인한 뒤 다시 확인해주세요
                   (OAuth 로그인은 브라우저에서 대신 진행할 수 없습니다):
                   <code className="mt-1 block rounded bg-black/40 px-2 py-1 font-mono">
                     {installHint(driver)}

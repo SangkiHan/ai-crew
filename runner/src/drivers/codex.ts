@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import spawn from "cross-spawn";
 import type { Employee, RunnerToServerEvent, Ticket } from "@ai-crew/shared";
 import { prepareEmployeeJob, reportDriverResult, toDisallowedBashPatterns } from "../employees/prepare.js";
 
@@ -88,7 +88,7 @@ export async function runCodexDriver(
     let buffer = "";
     let stderr = "";
 
-    child.stdout.on("data", (chunk: Buffer) => {
+    child.stdout!.on("data", (chunk: Buffer) => {
       buffer += chunk.toString();
       const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
@@ -107,7 +107,7 @@ export async function runCodexDriver(
       }
     });
 
-    child.stderr.on("data", (chunk: Buffer) => {
+    child.stderr!.on("data", (chunk: Buffer) => {
       stderr += chunk.toString();
     });
 
