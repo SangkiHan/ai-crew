@@ -33,15 +33,15 @@ export function App() {
         </button>
       </header>
       <div className="flex min-h-0 flex-1 overflow-hidden">
+        <aside className="w-96 shrink-0 border-r border-slate-800">
+          <ChatBar />
+        </aside>
         <main className="min-w-0 flex-1">
           <OrgChart />
         </main>
         <aside className="w-96 shrink-0 overflow-y-auto border-l border-slate-800">
           <DetailPanel />
         </aside>
-      </div>
-      <div className="h-64 shrink-0">
-        <ChatBar />
       </div>
       {managingEmployees && <EmployeeManager onClose={() => setManagingEmployees(false)} />}
     </div>

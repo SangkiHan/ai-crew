@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "./store.js";
 
 export function ChatBar() {
@@ -8,16 +8,21 @@ export function ChatBar() {
   const [text, setText] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
 
+  // manager_log/manager_result가 같은 메시지를 스트리밍으로 계속 갱신할 때도(길이는 안 바뀜)
+  // chatMessages 배열 참조 자체가 매번 바뀌므로, 새 메시지든 갱신이든 항상 아래로 붙는다.
+  useEffect(() => {
+    listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
+  }, [chatMessages]);
+
   async function handleSend() {
     const message = text.trim();
     if (!message || managerStatus === "busy") return;
     setText("");
     await sendUserMessage(message);
-    requestAnimationFrame(() => listRef.current?.scrollTo({ top: listRef.current.scrollHeight }));
   }
 
   return (
-    <div className="flex h-full flex-col border-t border-slate-800 bg-slate-900/80">
+    <div className="flex h-full flex-col bg-slate-900/80">
       <div ref={listRef} className="flex-1 overflow-y-auto px-4 py-2">
         {chatMessages.length === 0 ? (
           <p className="text-sm text-slate-500">팀장에게 할 일을 말해보세요. 예: "puppynote-server에 헬스체크 추가해줘"</p>
