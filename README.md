@@ -63,8 +63,23 @@ queued(대기) → assigned(배정) → running(작업중) ─┬→ review(검�
   드라이버)**으로 검증했다. 확인된 것: 티켓을 여러 개 동시에 던지면 정해진 동시 실행 수(기본 2개)만큼만
   병렬로 처리하고 나머지는 큐에서 대기하며, 러너 프로세스가 죽었다 재시작해도 `running` 상태였던 티켓을
   이어받아 끝까지 완료한다.
-- **아직 안 된 것**: 팀장(Claude Code headless)이 실제로 MCP 툴을 통해 티켓을 발행하는 것(2단계), 직원이
-  실제 코드를 고치는 것(3단계), 조직도 UI(4단계), 외부 접속(5단계), Gemini/Codex 직원 연결(6단계).
+- **2단계 (완료)**: 팀장에게 물릴 MCP 툴 5개(`list_projects`, `create_ticket`, `get_ticket`,
+  `list_tickets`, `ask_user`)와, `claude -p` 헤드리스 프로세스를 스폰해 세션을 `--resume`으로 이어가는
+  러너 쪽 매니저 호출기(`runner/src/manager/`)를 구현했다. `create_ticket`/`get_ticket`/`list_tickets`/
+  `ask_user`는 MCP 클라이언트로 직접 호출해 정상 동작을 확인했다.
+- **아직 안 된 것**: 직원이 실제 코드를 고치는 것(3단계), 조직도 UI(4단계), 외부 접속(5단계),
+  Gemini/Codex 직원 연결(6단계).
+
+### 알려진 이슈 — macOS 폴더 권한 (Full Disk Access 필요)
+
+`list_projects`가 `WORKSPACE_ROOT`(`~/Desktop/Project`)를 스캔하려고 `fs.readdir`를 호출하면
+macOS의 TCC(개인정보 보호) 정책 때문에 **Node.js가 `EPERM: operation not permitted, scandir`로
+막힌다.** `~/Desktop`, `~/Documents`, `~/Downloads`는 macOS가 특별히 보호하는 폴더라, 그 안의 내용을
+읽으려는 앱은 권한을 받아야 한다 (같은 코드로 `~/ai-crew`처럼 Desktop 밖의 폴더를 스캔하면 문제없이 된다).
+
+실제로 러너를 상시 구동시키기 전에, **`System Settings → Privacy & Security → Full Disk Access`에서
+러너를 실행할 앱(터미널 앱, 또는 `node` 바이너리)에 권한을 켜줘야 한다.** 이걸 안 하면 `list_projects`뿐
+아니라 3단계의 git worktree 생성·빌드 실행도 같은 벽에 부딪힐 가능성이 높다.
 
 ## 로컬 실행
 
@@ -79,6 +94,22 @@ DATABASE_URL="postgresql://aicrew:aicrew@localhost:5432/aicrew" \
 
 # 러너는 호스트에서 직접 실행 (컨테이너 아님 - JDK/Node 툴체인을 그대로 써야 하므로)
 pnpm --filter @ai-crew/runner dev
+```
+
+팀장을 직접 불러서 테스트 (별도 터미널에서, `apps/server` 빌드가 먼저 되어 있어야 `mcp/server.js`가 존재함):
+
+```bash
+pnpm --filter @ai-crew/server build
+pnpm --filter @ai-crew/runner manager "puppynote-server에 헬스체크 엔드포인트 추가해줘"
+```
+
+세션 id는 `~/.ai-crew/manager-session.json`에 저장되고, 다음 호출부터는 자동으로 `--resume`으로
+이어진다 (대화가 끊기지 않음). 새로 시작하고 싶으면 그 파일을 지우면 된다.
+
+`claude` CLI 없이 MCP 툴 5개만 따로 확인하고 싶으면:
+
+```bash
+pnpm --filter @ai-crew/server mcp:test
 ```
 
 티켓을 만들어 파이프라인이 도는지 확인:

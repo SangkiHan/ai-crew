@@ -21,3 +21,14 @@ model Ticket {
   updatedAt       DateTime @updatedAt
   lastHeartbeatAt DateTime?
 }
+
+// 팀장의 ask_user MCP 툴이 남기는 질문. 4단계 UI가 붙기 전까지는
+// 여기 쌓인 걸 GET /questions 로 확인하고 사람이 수동으로 답한다.
+model Question {
+  id        String   @id @default(cuid())
+  text      String
+  status    String   @default("open") // open | answered
+  answer    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
