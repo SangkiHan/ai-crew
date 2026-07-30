@@ -10,6 +10,8 @@ export type TicketStatus =
 
 export interface Ticket {
   id: string;
+  // 이 티켓이 속한 팀. 직원의 팀과 항상 같다 (생성 시 role로 찾은 직원의 teamId를 그대로 쓴다).
+  teamId: string;
   // 직원의 이름(Employee.name)과 같다. 직원이 이름 기반으로 자유롭게 추가/삭제되므로 고정 enum이 아니다.
   role: string;
   project: string;

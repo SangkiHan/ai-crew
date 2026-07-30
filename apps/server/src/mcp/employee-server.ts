@@ -10,8 +10,9 @@ import { answerPeerMessage, askPeer, listEmployees, reportBlocked } from "./tool
 // 사소한 건 동료에게 직접(ask_peer) - 이렇게 표면을 좁게 유지한다.
 const TICKET_ID = process.env.TICKET_ID;
 const EMPLOYEE_NAME = process.env.EMPLOYEE_NAME;
-if (!TICKET_ID || !EMPLOYEE_NAME) {
-  console.error("employee-server.ts: TICKET_ID, EMPLOYEE_NAME env가 필요합니다");
+const TEAM_ID = process.env.TEAM_ID;
+if (!TICKET_ID || !EMPLOYEE_NAME || !TEAM_ID) {
+  console.error("employee-server.ts: TICKET_ID, EMPLOYEE_NAME, TEAM_ID env가 필요합니다");
   process.exit(1);
 }
 
@@ -33,7 +34,7 @@ server.tool(
   "동료 직원 목록을 담당 업무 설명과 함께 조회합니다. ask_peer로 누구에게 물어볼지 정할 때 쓰세요.",
   {},
   async () => {
-    const employees = await listEmployees();
+    const employees = await listEmployees(TEAM_ID!);
     return { content: [{ type: "text" as const, text: JSON.stringify(employees, null, 2) }] };
   }
 );

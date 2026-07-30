@@ -3,12 +3,16 @@ import { OrgChart } from "./OrgChart.js";
 import { DetailPanel } from "./DetailPanel.js";
 import { ChatBar } from "./ChatBar.js";
 import { EmployeeManager } from "./EmployeeManager.js";
+import { TeamSwitcher } from "./TeamSwitcher.js";
 import { useStore } from "./store.js";
 import { useUiSocket } from "./lib/ws.js";
-import { fetchAgents, fetchEmployees, fetchTickets } from "./lib/api.js";
+import { fetchAgents, fetchEmployees, fetchTeams, fetchTickets } from "./lib/api.js";
 
 export function App() {
   const setAgents = useStore((s) => s.setAgents);
+  const setTeams = useStore((s) => s.setTeams);
+  const selectedTeamId = useStore((s) => s.selectedTeamId);
+  const setSelectedTeamId = useStore((s) => s.setSelectedTeamId);
   const setEmployees = useStore((s) => s.setEmployees);
   const setTickets = useStore((s) => s.setTickets);
   const [managingEmployees, setManagingEmployees] = useState(false);
@@ -19,22 +23,34 @@ export function App() {
     fetchAgents().then(setAgents).catch(console.error);
     fetchEmployees().then(setEmployees).catch(console.error);
     fetchTickets().then(setTickets).catch(console.error);
-  }, [setAgents, setEmployees, setTickets]);
+    fetchTeams().then((teams) => {
+      setTeams(teams);
+      // 처음 로드 시 또는 선택된 팀이 사라졌을 때(삭제 등) 첫 팀을 기본 선택한다.
+      const current = useStore.getState().selectedTeamId;
+      if (!current || !teams.some((t) => t.id === current)) {
+        setSelectedTeamId(teams[0]?.id ?? null);
+      }
+    }).catch(console.error);
+  }, [setAgents, setEmployees, setTickets, setTeams, setSelectedTeamId]);
 
   return (
     <div className="flex h-screen w-screen flex-col bg-slate-950">
       <header className="flex items-center justify-between border-b border-slate-800 px-4 py-2">
-        <h1 className="text-sm font-semibold tracking-wide text-slate-300">ai-crew</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-sm font-semibold tracking-wide text-slate-300">ai-crew</h1>
+          <TeamSwitcher />
+        </div>
         <button
           onClick={() => setManagingEmployees(true)}
-          className="rounded-md border border-slate-700 px-3 py-1 text-xs text-slate-300 hover:bg-slate-800"
+          disabled={!selectedTeamId}
+          className="rounded-md border border-slate-700 px-3 py-1 text-xs text-slate-300 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
         >
           직원 관리
         </button>
       </header>
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <aside className="w-96 shrink-0 border-r border-slate-800">
-          <ChatBar />
+          {selectedTeamId && <ChatBar teamId={selectedTeamId} />}
         </aside>
         <main className="min-w-0 flex-1">
           <OrgChart />
@@ -43,7 +59,9 @@ export function App() {
           <DetailPanel />
         </aside>
       </div>
-      {managingEmployees && <EmployeeManager onClose={() => setManagingEmployees(false)} />}
+      {managingEmployees && selectedTeamId && (
+        <EmployeeManager teamId={selectedTeamId} onClose={() => setManagingEmployees(false)} />
+      )}
     </div>
   );
 }

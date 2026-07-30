@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AgentConfig, Employee, ServerToUiEvent, Ticket } from "@ai-crew/shared";
+import type { AgentConfig, Employee, ServerToUiEvent, Team, Ticket } from "@ai-crew/shared";
 import { sendChatMessage } from "./lib/api.js";
 
 export interface LogLine {
@@ -16,21 +16,27 @@ export interface ChatMessage {
 }
 
 interface StoreState {
-  agents: AgentConfig[]; // 팀장 하나뿐 (agents/manager.md)
-  employees: Employee[]; // 웹에서 추가/삭제하는 직원들 (DB)
+  agents: AgentConfig[]; // 팀장 하나뿐 (agents/manager.md) - 프롬프트/설정은 모든 팀이 공유
+  teams: Team[];
+  selectedTeamId: string | null;
+  employees: Employee[]; // 웹에서 추가/삭제하는 직원들 (DB, 전체 팀)
   tickets: Record<string, Ticket>;
   logsByTicket: Record<string, LogLine[]>;
-  managerStatus: "idle" | "busy";
-  chatMessages: ChatMessage[];
+  // 팀마다 팀장 대화(세션)와 바쁨 상태가 분리된다 - teamId로 구분해서 들고 있는다.
+  managerStatusByTeam: Record<string, "idle" | "busy">;
+  chatMessagesByTeam: Record<string, ChatMessage[]>;
   selectedNodeId: string | null;
 
   setAgents: (agents: AgentConfig[]) => void;
+  setTeams: (teams: Team[]) => void;
+  setSelectedTeamId: (id: string | null) => void;
   setEmployees: (employees: Employee[]) => void;
   setTickets: (tickets: Ticket[]) => void;
   setSelectedNode: (id: string | null) => void;
-  sendUserMessage: (text: string) => Promise<void>;
+  sendUserMessage: (teamId: string, text: string) => Promise<void>;
   handleServerEvent: (event: ServerToUiEvent) => void;
 
+  employeesForTeam: (teamId: string) => Employee[];
   ticketsForRole: (role: string) => Ticket[];
   statusForRole: (role: string) => "idle" | "waiting" | "busy" | "attention";
 }
@@ -39,14 +45,18 @@ const MAX_LOG_LINES = 500;
 
 export const useStore = create<StoreState>((set, get) => ({
   agents: [],
+  teams: [],
+  selectedTeamId: null,
   employees: [],
   tickets: {},
   logsByTicket: {},
-  managerStatus: "idle",
-  chatMessages: [],
+  managerStatusByTeam: {},
+  chatMessagesByTeam: {},
   selectedNodeId: "manager",
 
   setAgents: (agents) => set({ agents }),
+  setTeams: (teams) => set({ teams }),
+  setSelectedTeamId: (id) => set({ selectedTeamId: id }),
   setEmployees: (employees) => set({ employees }),
 
   setTickets: (tickets) =>
@@ -54,12 +64,14 @@ export const useStore = create<StoreState>((set, get) => ({
 
   setSelectedNode: (id) => set({ selectedNodeId: id }),
 
-  sendUserMessage: async (text) => {
+  sendUserMessage: async (teamId, text) => {
     const userMsg: ChatMessage = { id: crypto.randomUUID(), role: "user", text };
-    set((s) => ({ chatMessages: [...s.chatMessages, userMsg] }));
+    set((s) => ({
+      chatMessagesByTeam: { ...s.chatMessagesByTeam, [teamId]: [...(s.chatMessagesByTeam[teamId] ?? []), userMsg] },
+    }));
 
     try {
-      const { requestId } = await sendChatMessage(text);
+      const { requestId } = await sendChatMessage(teamId, text);
       const managerMsg: ChatMessage = {
         id: crypto.randomUUID(),
         role: "manager",
@@ -67,14 +79,24 @@ export const useStore = create<StoreState>((set, get) => ({
         requestId,
         pending: true,
       };
-      set((s) => ({ chatMessages: [...s.chatMessages, managerMsg] }));
+      set((s) => ({
+        chatMessagesByTeam: {
+          ...s.chatMessagesByTeam,
+          [teamId]: [...(s.chatMessagesByTeam[teamId] ?? []), managerMsg],
+        },
+      }));
     } catch (err) {
       const errorMsg: ChatMessage = {
         id: crypto.randomUUID(),
         role: "manager",
         text: `(에러) ${err instanceof Error ? err.message : String(err)}`,
       };
-      set((s) => ({ chatMessages: [...s.chatMessages, errorMsg] }));
+      set((s) => ({
+        chatMessagesByTeam: {
+          ...s.chatMessagesByTeam,
+          [teamId]: [...(s.chatMessagesByTeam[teamId] ?? []), errorMsg],
+        },
+      }));
     }
   },
 
@@ -88,23 +110,31 @@ export const useStore = create<StoreState>((set, get) => ({
         return { logsByTicket: { ...s.logsByTicket, [event.ticketId]: next } };
       });
     } else if (event.type === "manager_status") {
-      set({ managerStatus: event.status });
+      set((s) => ({ managerStatusByTeam: { ...s.managerStatusByTeam, [event.teamId]: event.status } }));
     } else if (event.type === "manager_log") {
       set((s) => ({
-        chatMessages: s.chatMessages.map((m) =>
-          m.requestId === event.requestId ? { ...m, text: `${m.text}${m.text ? "\n" : ""}${event.line}` } : m
-        ),
+        chatMessagesByTeam: {
+          ...s.chatMessagesByTeam,
+          [event.teamId]: (s.chatMessagesByTeam[event.teamId] ?? []).map((m) =>
+            m.requestId === event.requestId ? { ...m, text: `${m.text}${m.text ? "\n" : ""}${event.line}` } : m
+          ),
+        },
       }));
     } else if (event.type === "manager_result") {
       set((s) => ({
-        chatMessages: s.chatMessages.map((m) =>
-          m.requestId === event.requestId
-            ? { ...m, text: event.resultText || m.text, pending: false }
-            : m
-        ),
+        chatMessagesByTeam: {
+          ...s.chatMessagesByTeam,
+          [event.teamId]: (s.chatMessagesByTeam[event.teamId] ?? []).map((m) =>
+            m.requestId === event.requestId
+              ? { ...m, text: event.resultText || m.text, pending: false }
+              : m
+          ),
+        },
       }));
     }
   },
+
+  employeesForTeam: (teamId) => get().employees.filter((e) => e.teamId === teamId),
 
   ticketsForRole: (role) => Object.values(get().tickets).filter((t) => t.role === role),
 

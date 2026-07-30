@@ -30,7 +30,7 @@ export interface ManagerResult {
   success: boolean;
 }
 
-function buildMcpConfig(): string {
+function buildMcpConfig(teamId: string): string {
   return JSON.stringify({
     mcpServers: {
       [MCP_SERVER_NAME]: {
@@ -40,20 +40,23 @@ function buildMcpConfig(): string {
         env: {
           AI_CREW_SERVER_URL,
           WORKSPACE_ROOT,
+          TEAM_ID: teamId,
         },
       },
     },
   });
 }
 
-// 사용자 메시지(또는 직원의 blocked/report 이벤트)로 팀장을 깨운다.
-// 세션이 있으면 --resume으로 이어가고, 없으면 새로 시작한다.
+// 사용자 메시지(또는 직원의 blocked/report 이벤트)로 팀장을 깨운다. 어느 팀의 팀장인지는
+// teamId로 구분된다 - 팀마다 대화 세션(--resume)과 MCP 툴이 보는 직원/티켓 범위가 분리된다.
+// 팀장의 프롬프트(agents/manager.md) 자체는 모든 팀이 공유한다 - 내용이 팀마다 다르지 않다.
 export async function invokeManager(
+  teamId: string,
   message: string,
   onEvent?: (line: string) => void
 ): Promise<ManagerResult> {
   const agent = await loadAgentDefinition(AGENT_DEFINITION_PATH);
-  const previousSessionId = await readSessionId();
+  const previousSessionId = await readSessionId(teamId);
 
   const result = await runClaudeHeadless({
     message,
@@ -63,10 +66,10 @@ export async function invokeManager(
     cwd: MANAGER_CWD,
     model: agent.model,
     resumeSessionId: previousSessionId ?? undefined,
-    mcpConfigJson: buildMcpConfig(),
+    mcpConfigJson: buildMcpConfig(teamId),
     onEvent,
   });
 
-  if (result.sessionId) await writeSessionId(result.sessionId);
+  if (result.sessionId) await writeSessionId(teamId, result.sessionId);
   return result;
 }

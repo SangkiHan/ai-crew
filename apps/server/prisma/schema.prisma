@@ -20,6 +20,21 @@ model Ticket {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   lastHeartbeatAt DateTime?
+  // 기존 설치(이미 티켓/직원이 있는 DB)에서도 db push가 데이터 유실 없이 되도록 nullable로 둔다.
+  // 실제로는 서버 부팅 시 기본 팀을 만들고 null인 행을 채워 넣어서 사실상 항상 값이 있게 유지한다.
+  teamId          String?
+  team            Team?    @relation(fields: [teamId], references: [id])
+}
+
+// 여러 팀을 만들 수 있게 하기 위한 모델. 팀마다 팀장 세션(대화)과 직원 명단이 분리된다 -
+// 팀장 프롬프트(agents/manager.md) 자체는 팀마다 다르지 않고, 그 팀장이 보는 직원/티켓 범위만 다르다.
+model Team {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  employees Employee[]
+  tickets   Ticket[]
 }
 
 // 팀장의 ask_user MCP 툴이 남기는 질문. 4단계 UI가 붙기 전까지는
@@ -46,6 +61,9 @@ model Employee {
   requireApproval String[]
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  // Ticket.teamId와 같은 이유로 nullable (기존 설치 마이그레이션 안전성) - 부팅 시 자동으로 채워진다.
+  teamId          String?
+  team            Team?    @relation(fields: [teamId], references: [id])
 }
 
 // 직원 간 비동기 질문-답변 (팀장을 거치지 않는 사소한 소통). 보낸 쪽은 답을 기다리지 않고 계속

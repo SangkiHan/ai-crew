@@ -11,13 +11,15 @@ if (existsSync(envPath)) {
 
 const { invokeManager } = await import("./invoke.js");
 
-const message = process.argv.slice(2).join(" ");
-if (!message) {
-  console.error('usage: pnpm --filter @ai-crew/runner manager "<메시지>"');
+const [teamId, ...rest] = process.argv.slice(2);
+const message = rest.join(" ");
+if (!teamId || !message) {
+  console.error('usage: pnpm --filter @ai-crew/runner manager <teamId> "<메시지>"');
+  console.error("teamId는 GET /api/teams로 확인하세요.");
   process.exit(1);
 }
 
-const result = await invokeManager(message, (line) => console.log(line));
+const result = await invokeManager(teamId, message, (line) => console.log(line));
 console.log("\nsession:", result.sessionId, "| success:", result.success);
 console.log("\n--- result ---\n");
 console.log(result.resultText);

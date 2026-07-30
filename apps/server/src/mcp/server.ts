@@ -8,6 +8,14 @@ import { askUser, createTicket, getTicket, listEmployees, listProjects, listTick
 // 이 프로세스를 호스트에서 띄운다. 실제 상태는 여기서 들고 있지 않고, 항상 서버의
 // REST API(/tickets, /questions)를 호출한다 - 이 프로세스는 매 invocation마다 새로 뜨는
 // stdio 자식 프로세스라 상태를 들고 있으면 안 된다.
+// TEAM_ID: 이 팀장이 어느 팀을 위해 호출됐는지 - 여러 팀이 생기면서 직원/티켓 조회·생성을
+// 자기 팀 범위로만 제한하기 위해 러너가 env로 주입한다.
+const TEAM_ID = process.env.TEAM_ID;
+if (!TEAM_ID) {
+  console.error("mcp/server.ts: TEAM_ID env가 필요합니다");
+  process.exit(1);
+}
+
 const server = new McpServer({ name: "ai-crew-manager-tools", version: "0.0.0" });
 
 server.tool(
@@ -26,7 +34,7 @@ server.tool(
     "이걸로 어떤 직원(role)에게 맡길지 확인하세요.",
   {},
   async () => {
-    const employees = await listEmployees();
+    const employees = await listEmployees(TEAM_ID!);
     return { content: [{ type: "text" as const, text: JSON.stringify(employees, null, 2) }] };
   }
 );
@@ -53,24 +61,24 @@ server.tool(
       ),
   },
   async ({ role, project, title, spec, parentTicketId }) => {
-    const ticket = await createTicket({ role, project, title, spec, parentTicketId });
+    const ticket = await createTicket({ teamId: TEAM_ID!, role, project, title, spec, parentTicketId });
     return { content: [{ type: "text" as const, text: JSON.stringify(ticket, null, 2) }] };
   }
 );
 
 server.tool(
   "get_ticket",
-  "티켓 하나의 현재 상태와 상세 정보를 조회합니다.",
+  "티켓 하나의 현재 상태와 상세 정보를 조회합니다. 우리 팀 티켓만 조회할 수 있습니다.",
   { id: z.string().describe("티켓 id") },
   async ({ id }) => {
-    const ticket = await getTicket(id);
+    const ticket = await getTicket(id, TEAM_ID!);
     return { content: [{ type: "text" as const, text: JSON.stringify(ticket, null, 2) }] };
   }
 );
 
 server.tool(
   "list_tickets",
-  "현재 티켓 보드 상태를 조회합니다. status로 필터링할 수 있습니다.",
+  "우리 팀의 티켓 보드 상태를 조회합니다. status로 필터링할 수 있습니다.",
   {
     status: z
       .enum(["queued", "assigned", "running", "review", "blocked", "needs_approval", "done", "failed"])
@@ -78,7 +86,7 @@ server.tool(
       .describe("이 상태의 티켓만 조회 (생략하면 전체)"),
   },
   async ({ status }) => {
-    const tickets = await listTickets(status);
+    const tickets = await listTickets(TEAM_ID!, status);
     return { content: [{ type: "text" as const, text: JSON.stringify(tickets, null, 2) }] };
   }
 );

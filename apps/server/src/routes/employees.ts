@@ -8,6 +8,7 @@ import {
 } from "../employees/store.js";
 
 interface EmployeeBody {
+  teamId: string;
   name: string;
   driver: string;
   model?: string;
@@ -21,8 +22,8 @@ const DEFAULT_REQUIRE_APPROVAL = ["git push", "rm"];
 const VALID_DRIVERS = ["claude", "gemini", "codex"];
 
 export function registerEmployeeRoutes(app: FastifyInstance) {
-  app.get("/api/employees", async () => {
-    return listEmployees();
+  app.get<{ Querystring: { teamId?: string } }>("/api/employees", async (req) => {
+    return listEmployees(req.query.teamId);
   });
 
   app.get<{ Params: { id: string } }>("/api/employees/:id", async (req, reply) => {
@@ -32,15 +33,16 @@ export function registerEmployeeRoutes(app: FastifyInstance) {
   });
 
   app.post<{ Body: EmployeeBody }>("/api/employees", async (req, reply) => {
-    const { name, driver, model, taskDescription, allowedTools, requireApproval } = req.body;
-    if (!name || !driver || !taskDescription) {
-      return reply.code(400).send({ error: "name, driver, taskDescription are required" });
+    const { teamId, name, driver, model, taskDescription, allowedTools, requireApproval } = req.body;
+    if (!teamId || !name || !driver || !taskDescription) {
+      return reply.code(400).send({ error: "teamId, name, driver, taskDescription are required" });
     }
     if (!VALID_DRIVERS.includes(driver)) {
       return reply.code(400).send({ error: `driver must be one of ${VALID_DRIVERS.join(", ")}` });
     }
     try {
       return await createEmployee({
+        teamId,
         name,
         driver,
         model,

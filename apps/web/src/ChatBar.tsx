@@ -1,9 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { useStore } from "./store.js";
+import { useStore, type ChatMessage } from "./store.js";
 
-export function ChatBar() {
-  const chatMessages = useStore((s) => s.chatMessages);
-  const managerStatus = useStore((s) => s.managerStatus);
+// zustand(React useSyncExternalStore)는 매 렌더마다 selector가 "같은" 스냅샷을 반환하는지
+// 확인한다. `?? []`로 매번 새 배열을 리터럴로 만들면 참조가 계속 달라져 무한 리렌더링
+// (React error #185, Maximum update depth exceeded)로 이어진다 - 고정된 참조 하나로 둔다.
+const EMPTY_MESSAGES: ChatMessage[] = [];
+
+export function ChatBar({ teamId }: { teamId: string }) {
+  const chatMessages = useStore((s) => s.chatMessagesByTeam[teamId] ?? EMPTY_MESSAGES);
+  const managerStatus = useStore((s) => s.managerStatusByTeam[teamId] ?? "idle");
   const sendUserMessage = useStore((s) => s.sendUserMessage);
   const [text, setText] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
@@ -18,7 +23,7 @@ export function ChatBar() {
     const message = text.trim();
     if (!message || managerStatus === "busy") return;
     setText("");
-    await sendUserMessage(message);
+    await sendUserMessage(teamId, message);
   }
 
   return (
