@@ -1,5 +1,4 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import spawn from "cross-spawn";
 import WebSocket from "ws";
 import type { DriverStatus, RunnerToServerEvent, ServerToRunnerEvent, Ticket } from "@ai-crew/shared";
 import { fetchEmployees } from "./employees/api.js";
@@ -90,24 +89,37 @@ async function handleMergeTicket(event: { ticketId: string; project: string; bra
   }
 }
 
-const execFileAsync = promisify(execFile);
 const DRIVER_BINARIES: Record<string, string> = { claude: "claude", gemini: "gemini", codex: "codex" };
 
-// 웹 UI에서 직원을 추가할 때 "이 CLI가 이 맥에 설치돼 있나" 보여주기 위한 것. 설치 여부만
-// 확인한다 - 로그인(OAuth) 여부는 브라우저에서 대신 눌러줄 수 있는 게 아니라서 실제로 티켓을
-// 돌려봐야 알 수 있다 (인증 실패 시 job 로그에 에러가 그대로 보인다).
+// 실행파일 이름으로 --version을 돌려본다. cross-spawn을 쓰는 이유: Windows에서 claude/gemini/codex는
+// npm 전역 설치 시 진짜 실행파일이 아니라 .cmd 쉼(shim)이라서, node의 기본 spawn/execFile은
+// shell: true 없이는 아예 시작도 못 시킨다 (그럼 실제로는 설치돼 있어도 "설치 안 됨"으로 잘못 나옴).
+// cross-spawn이 플랫폼별로 이 문제를 알아서 처리해준다.
+function checkOneDriver(bin: string): Promise<DriverStatus> {
+  return new Promise((resolve) => {
+    const child = spawn(bin, ["--version"]);
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
+    child.stderr?.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+    child.on("error", (err) => resolve({ installed: false, versionOrError: err.message }));
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve({ installed: true, versionOrError: stdout.trim() });
+      } else {
+        resolve({ installed: false, versionOrError: stderr.trim() || `exit code ${code}` });
+      }
+    });
+  });
+}
+
+// 웹 UI에서 직원을 추가할 때 "이 CLI가 이 컴퓨터(러너)에 설치돼 있나" 보여주기 위한 것. 설치
+// 여부만 확인한다 - 로그인(OAuth) 여부는 브라우저에서 대신 눌러줄 수 있는 게 아니라서 실제로
+// 티켓을 돌려봐야 알 수 있다 (인증 실패 시 job 로그에 에러가 그대로 보인다).
 async function handleCheckDriverStatus(requestId: string) {
   const status: Record<string, DriverStatus> = {};
   for (const [driver, bin] of Object.entries(DRIVER_BINARIES)) {
-    try {
-      const { stdout } = await execFileAsync(bin, ["--version"]);
-      status[driver] = { installed: true, versionOrError: stdout.trim() };
-    } catch (err) {
-      status[driver] = {
-        installed: false,
-        versionOrError: err instanceof Error ? err.message : String(err),
-      };
-    }
+    status[driver] = await checkOneDriver(bin);
   }
   send({ type: "driver_status_result", requestId, status });
 }

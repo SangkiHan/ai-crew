@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { execFile, spawn } from "node:child_process";
+import { execFile } from "node:child_process";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import spawn from "cross-spawn";
 import type { Employee, RunnerToServerEvent, Ticket } from "@ai-crew/shared";
 import { prepareEmployeeJob, reportDriverResult } from "../employees/prepare.js";
 
@@ -115,7 +116,7 @@ export async function runGeminiDriver(
     let buffer = "";
     let stderr = "";
 
-    child.stdout.on("data", (chunk: Buffer) => {
+    child.stdout!.on("data", (chunk: Buffer) => {
       buffer += chunk.toString();
       const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
@@ -135,7 +136,7 @@ export async function runGeminiDriver(
       }
     });
 
-    child.stderr.on("data", (chunk: Buffer) => {
+    child.stderr!.on("data", (chunk: Buffer) => {
       stderr += chunk.toString();
     });
 

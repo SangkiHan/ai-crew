@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import spawn from "cross-spawn";
 
 export interface HeadlessRunOptions {
   message: string;
@@ -80,7 +80,7 @@ export function runClaudeHeadless(opts: HeadlessRunOptions): Promise<HeadlessRun
     let sessionId = opts.resumeSessionId ?? "";
     let resultText = "";
 
-    child.stdout.on("data", (chunk: Buffer) => {
+    child.stdout!.on("data", (chunk: Buffer) => {
       buffer += chunk.toString();
       const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
@@ -102,7 +102,7 @@ export function runClaudeHeadless(opts: HeadlessRunOptions): Promise<HeadlessRun
       }
     });
 
-    child.stderr.on("data", (chunk: Buffer) => {
+    child.stderr!.on("data", (chunk: Buffer) => {
       stderr += chunk.toString();
     });
 
