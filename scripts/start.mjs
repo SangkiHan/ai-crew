@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // 한 번에 다 띄우는 스크립트: docker compose(서버/웹/DB/Caddy) + DB 스키마 동기화 + 러너(호스트).
 // 러너는 git worktree/JDK/Gradle/claude·gemini·codex CLI가 필요해서 컨테이너 안에 넣을 수 없다 -
-// 그래서 docker는 백그라운드로 띄우고, 이 스크립트 자체가 마지막에 러너로 넘어가 포그라운드로 로그를 보여준다.
-import { existsSync, readFileSync } from "node:fs";
+// 그래서 docker와 러너 둘 다 백그라운드(detached)로 띄우고 이 스크립트는 바로 끝난다.
+// 로그는 .run/runner.log에 쌓이고, 끄고 싶을 때는 `pnpm stop` 하나면 된다 (scripts/stop.mjs).
+import { existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +11,9 @@ import { fileURLToPath } from "node:url";
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const COMPOSE_FILE = join(REPO_ROOT, "infra", "docker-compose.yml");
 const ENV_PATH = join(REPO_ROOT, ".env");
+const RUN_DIR = join(REPO_ROOT, ".run");
+const RUNNER_PID_FILE = join(RUN_DIR, "runner.pid");
+const RUNNER_LOG_FILE = join(RUN_DIR, "runner.log");
 
 function readEnvValue(key, fallback) {
   if (!existsSync(ENV_PATH)) return fallback;
@@ -38,10 +42,30 @@ async function waitForHealth(url, timeoutMs = 60000) {
   return false;
 }
 
+function isRunning(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function main() {
   if (!existsSync(ENV_PATH)) {
     console.log(".env가 없습니다. 먼저 설정을 진행합니다.\n");
     run(process.execPath, [join(REPO_ROOT, "scripts", "setup.mjs")]);
+  }
+
+  mkdirSync(RUN_DIR, { recursive: true });
+
+  if (existsSync(RUNNER_PID_FILE)) {
+    const existingPid = Number(readFileSync(RUNNER_PID_FILE, "utf-8").trim());
+    if (existingPid && isRunning(existingPid)) {
+      console.log(`러너가 이미 실행 중입니다 (pid ${existingPid}). 중복 실행을 막기 위해 종료합니다.`);
+      console.log("재시작하려면 먼저 `pnpm stop`으로 내려주세요.");
+      process.exit(1);
+    }
   }
 
   const serverPort = readEnvValue("SERVER_PORT", "8080");
@@ -66,16 +90,19 @@ async function main() {
     env: { ...process.env, DATABASE_URL: databaseUrl },
   });
 
-  console.log("\n서버/웹/DB는 백그라운드에서 계속 떠 있습니다.");
-  console.log("내리고 싶으면: docker compose -f infra/docker-compose.yml down\n");
-  console.log("이제 러너를 포그라운드로 실행합니다 (Ctrl+C로 러너만 멈춥니다. docker는 안 내려감).\n");
-
-  // 러너는 계속 실행되는 프로세스라 여기서부터는 이 스크립트가 곧 러너다 (exec처럼 인계).
+  console.log("[4/4] 러너를 백그라운드로 띄웁니다…");
+  const logFd = openSync(RUNNER_LOG_FILE, "a");
   const runner = spawn("pnpm", ["--filter", "@ai-crew/runner", "dev"], {
-    stdio: "inherit",
     cwd: REPO_ROOT,
+    detached: true,
+    stdio: ["ignore", logFd, logFd],
   });
-  runner.on("exit", (code) => process.exit(code ?? 0));
+  writeFileSync(RUNNER_PID_FILE, String(runner.pid));
+  runner.unref();
+
+  console.log("\n모든 서비스가 백그라운드에서 떠 있습니다 (docker: server/web/postgres/caddy, 호스트: 러너).");
+  console.log(`러너 로그 보기: tail -f ${RUNNER_LOG_FILE}`);
+  console.log("전부 내리려면: pnpm stop\n");
 }
 
 main().catch((err) => {

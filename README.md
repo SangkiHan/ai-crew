@@ -14,7 +14,8 @@ pnpm install
 pnpm start
 ```
 
-`pnpm start` 하나로 다음이 순서대로 자동 진행된다:
+`pnpm start` 하나로 다음이 순서대로 자동 진행되고, **모든 서비스가 백그라운드로 뜬 뒤 명령이 바로
+끝난다** (터미널을 계속 붙잡고 있지 않아도 됨):
 
 1. `.env`가 없으면 먼저 `scripts/setup.mjs`를 실행해 AI 직원들이 작업할 프로젝트 폴더 경로
    (`WORKSPACE_ROOT`)를 물어보고 `.env`를 만든다.
@@ -22,18 +23,26 @@ pnpm start
 3. 서버가 `/health`에 응답할 때까지 최대 60초 기다린다.
 4. `prisma db push`로 DB 스키마를 동기화한다 (이미 최신이면 아무 일도 안 함 — 몇 번을 다시 실행해도
    안전하다).
-5. 마지막으로 **러너**(`pnpm --filter @ai-crew/runner dev`)를 이 터미널에 포그라운드로 이어받아
-   로그가 그대로 보인다.
-
-`Ctrl+C`로 멈추면 **러너만** 멈춘다 — docker로 띄운 서버/DB/웹은 계속 떠 있는다. 전부 내리고 싶으면:
+5. 마지막으로 **러너**(`pnpm --filter @ai-crew/runner dev`)도 백그라운드(detached)로 띄운다. 로그는
+   `.run/runner.log`에 쌓이고, pid는 `.run/runner.pid`에 기록된다.
 
 ```bash
-docker compose -f infra/docker-compose.yml down
+tail -f .run/runner.log   # 러너 로그를 실시간으로 보고 싶을 때
 ```
 
-다시 시작할 때는(이미 `.env`가 있으므로) `pnpm start` 한 번이면 된다. 컨테이너를 새로 빌드할 필요가
-없을 때도 그냥 `pnpm start`를 다시 돌리면 되고(변경 없으면 build 단계는 캐시로 빠르게 끝남), DB
-데이터는 volume에 남아있으니 그대로 이어진다.
+이미 러너가 떠 있는 상태에서 `pnpm start`를 또 실행하면 중복 실행을 막기 위해 그냥 종료한다
+(먼저 `pnpm stop`으로 내려야 다시 띄울 수 있다).
+
+전부(러너 + docker) 한 번에 내리고 싶으면:
+
+```bash
+pnpm stop
+```
+
+`pnpm stop`은 러너 프로세스(자식 프로세스까지 전부)를 먼저 종료하고, 그다음
+`docker compose down`으로 컨테이너를 내린다. DB는 volume에 남아있으니 데이터는 그대로 유지된다.
+다시 시작할 때는 `pnpm start` 한 번이면 된다 (컨테이너 재빌드는 변경분만 캐시 없이 처리되므로
+빠르다).
 
 브라우저에서 `http://localhost` 접속 → 우측 상단 **"직원 관리"** 로 직원을 추가하고, 하단 채팅창에
 팀장에게 할 일을 말하면 된다.
@@ -205,8 +214,13 @@ DATABASE_URL="postgresql://aicrew:aicrew@localhost:5432/aicrew" \
   pnpm --filter @ai-crew/server exec prisma db push
 
 # 러너는 호스트에서 직접 실행 (컨테이너 아님 - JDK/Gradle/git worktree/CLI를 그대로 써야 하므로)
+# 포그라운드로 로그를 보면서 띄우고 싶으면 pnpm start 대신 이렇게:
 pnpm --filter @ai-crew/runner dev
 ```
+
+내릴 때도 손으로 하려면 러너 프로세스를 직접 찾아 종료(`Ctrl+C` 또는 `kill`)한 뒤
+`docker compose -f infra/docker-compose.yml down`을 실행하면 된다 (`pnpm stop`이 이 두 가지를
+자동으로 해준다).
 
 팀장을 CLI로 직접 불러서 테스트 (별도 터미널에서, `apps/server` 빌드가 먼저 되어 있어야
 `mcp/server.js`가 존재함):
