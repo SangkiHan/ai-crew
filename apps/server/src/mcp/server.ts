@@ -10,6 +10,7 @@ import {
   listEmployees,
   listProjects,
   listTickets,
+  searchHistory,
 } from "./tools.js";
 
 // 팀장(Claude Code headless)에게 붙는 MCP 서버. 러너가 `claude -p ... --mcp-config`로
@@ -122,6 +123,22 @@ server.tool(
   async ({ employeeName, request }) => {
     const doc = await createPlanningDoc(TEAM_ID!, employeeName, request);
     return { content: [{ type: "text" as const, text: JSON.stringify(doc, null, 2) }] };
+  }
+);
+
+server.tool(
+  "search_history",
+  "우리 팀이 과거에 완료한 티켓/승인된 기획서를 자연어로 의미 검색합니다. 정확한 id나 제목을 " +
+    "몰라도 됩니다 (예: '즐겨찾기 관련 작업'). 지금 대화에서 이미 기억하고 있는 내용이면 이 툴을 " +
+    "쓸 필요 없습니다 - 세션이 재시작됐거나, 오래돼서 잘 기억이 안 나거나, 사용자가 옛날 일을 " +
+    "물어볼 때만 보조로 쓰세요.",
+  {
+    query: z.string().describe("찾고 싶은 내용을 자연어로"),
+    limit: z.number().optional().describe("최대 결과 개수 (기본 5)"),
+  },
+  async ({ query, limit }) => {
+    const results = await searchHistory(TEAM_ID!, query, limit);
+    return { content: [{ type: "text" as const, text: JSON.stringify(results, null, 2) }] };
   }
 );
 

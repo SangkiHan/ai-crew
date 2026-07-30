@@ -11,6 +11,9 @@ export interface HeadlessRunOptions {
   resumeSessionId?: string;
   mcpConfigJson?: string;
   onEvent?: (line: string) => void;
+  // 워크트리에 pid를 기록해두면(claude/gemini/codex 드라이버가 씀), 러너 재시작 후 이 티켓을
+  // 다시 집어들 때 이전 세션이 아직 살아있는지 확인하고 정리할 수 있다.
+  onSpawn?: (pid: number | undefined) => void;
 }
 
 export interface HeadlessRunResult {
@@ -74,6 +77,7 @@ export function runClaudeHeadless(opts: HeadlessRunOptions): Promise<HeadlessRun
 
   return new Promise((resolve, reject) => {
     const child = spawn("claude", args, { cwd: opts.cwd });
+    opts.onSpawn?.(child.pid);
 
     let buffer = "";
     let stderr = "";

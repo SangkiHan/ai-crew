@@ -77,7 +77,7 @@ async function handleRunnerEvent(event: RunnerToServerEvent, app: FastifyInstanc
   } else if (event.type === "planning_doc_log") {
     app.log.info({ planningDocId: event.planningDocId }, event.line);
   } else if (event.type === "planning_doc_result") {
-    const doc = await updatePlanningDocResult(event.planningDocId, event.success, event.content);
+    const doc = await updatePlanningDocResult(event.planningDocId, event.success, event.content, event.sessionId);
     if (doc) broadcastToUi({ type: "planning_doc_updated", doc });
   } else if (event.type === "job_log") {
     broadcastToUi({ type: "log_line", ticketId: event.ticketId, line: event.line, ts: event.ts });
@@ -157,9 +157,10 @@ export function requestMerge(ticketId: string, project: string, branch: string, 
   socket.send(JSON.stringify(event));
 }
 
-// 팀장이 create_planning_doc MCP 툴로 위임하면 호출된다. 실제 기획서 작성은 호스트(러너)에서
-// 그 직원의 CLI 세션으로 진행된다 (worktree/git 없이 텍스트만 생성).
-export function requestPlanningDocJob(doc: PlanningDoc): void {
+// 팀장이 create_planning_doc으로 위임하거나(최초), 사람이 수정 요청을 남기면(티키타카) 호출된다.
+// 실제 기획서 작성은 호스트(러너)에서 그 직원의 CLI 세션으로 진행된다(worktree/git 없이 텍스트만
+// 생성). resumeSessionId가 있으면 이전 초안과 같은 대화를 이어서 다듬는다.
+export function requestPlanningDocJob(doc: PlanningDoc, message: string, resumeSessionId?: string): void {
   const socket = [...runnerSockets][0];
   if (!socket) return; // 러너가 없으면 조용히 스킵 - drafting 상태로 남는다 (사람이 나중에 재시도 필요)
   const event: ServerToRunnerEvent = {
@@ -167,7 +168,8 @@ export function requestPlanningDocJob(doc: PlanningDoc): void {
     planningDocId: doc.id,
     teamId: doc.teamId,
     employeeName: doc.employeeName,
-    request: doc.request,
+    message,
+    resumeSessionId,
   };
   socket.send(JSON.stringify(event));
 }

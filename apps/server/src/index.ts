@@ -10,6 +10,7 @@ import { registerPeerMessageRoutes } from "./routes/peer-messages.js";
 import { registerDriverRoutes } from "./routes/drivers.js";
 import { registerTeamRoutes } from "./routes/teams.js";
 import { registerPlanningDocRoutes } from "./routes/planning-docs.js";
+import { registerMemoryRoutes } from "./routes/memory.js";
 import { ensureDefaultTeamAssigned } from "./teams/store.js";
 import { registerUiWs } from "./ws/ui.js";
 import { registerRunnerWs } from "./ws/runner.js";
@@ -51,6 +52,7 @@ async function main() {
   registerDriverRoutes(app);
   registerTeamRoutes(app);
   registerPlanningDocRoutes(app);
+  registerMemoryRoutes(app);
   registerUiWs(app);
   registerRunnerWs(app);
 

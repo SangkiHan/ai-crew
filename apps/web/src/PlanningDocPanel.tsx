@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { PlanningDoc, PlanningDocStatus } from "@ai-crew/shared";
 import { useStore } from "./store.js";
-import { approvePlanningDoc, fetchPlanningDocs, rejectPlanningDoc } from "./lib/api.js";
+import { approvePlanningDoc, fetchPlanningDocs, rejectPlanningDoc, revisePlanningDoc } from "./lib/api.js";
 
 const STATUS_LABEL: Record<PlanningDocStatus, string> = {
   drafting: "작성 중…",
@@ -27,6 +27,7 @@ export function PlanningDocPanel({ teamId, onClose }: { teamId: string; onClose:
   const setPlanningDocs = useStore((s) => s.setPlanningDocs);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [revisionText, setRevisionText] = useState("");
 
   useEffect(() => {
     fetchPlanningDocs(teamId).then((list) => setPlanningDocs(teamId, list)).catch(console.error);
@@ -48,6 +49,18 @@ export function PlanningDocPanel({ teamId, onClose }: { teamId: string; onClose:
     setBusy(true);
     try {
       await rejectPlanningDoc(doc.id);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRevise(doc: PlanningDoc) {
+    const message = revisionText.trim();
+    if (!message) return;
+    setBusy(true);
+    try {
+      await revisePlanningDoc(doc.id, message);
+      setRevisionText("");
     } finally {
       setBusy(false);
     }
@@ -108,21 +121,42 @@ export function PlanningDocPanel({ teamId, onClose }: { teamId: string; onClose:
                 )}
               </div>
               {selected.status === "review" && (
-                <div className="flex justify-end gap-2 border-t border-slate-800 px-5 py-3">
-                  <button
-                    disabled={busy}
-                    onClick={() => handleReject(selected)}
-                    className="rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-500 disabled:opacity-50"
-                  >
-                    거부
-                  </button>
-                  <button
-                    disabled={busy}
-                    onClick={() => handleApprove(selected)}
-                    className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
-                  >
-                    승인하고 개발 시작
-                  </button>
+                <div className="border-t border-slate-800 px-5 py-3">
+                  <div className="mb-2 flex gap-2">
+                    <input
+                      value={revisionText}
+                      onChange={(e) => setRevisionText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleRevise(selected);
+                      }}
+                      placeholder="이 기획서에 수정 요청하기 (예: 오픈 이슈 2번은 토글 API로 통합해줘)"
+                      disabled={busy}
+                      className="flex-1 rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500 disabled:opacity-50"
+                    />
+                    <button
+                      disabled={busy || !revisionText.trim()}
+                      onClick={() => handleRevise(selected)}
+                      className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-50"
+                    >
+                      수정 요청
+                    </button>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <button
+                      disabled={busy}
+                      onClick={() => handleReject(selected)}
+                      className="rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-500 disabled:opacity-50"
+                    >
+                      거부
+                    </button>
+                    <button
+                      disabled={busy}
+                      onClick={() => handleApprove(selected)}
+                      className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+                    >
+                      승인하고 개발 시작
+                    </button>
+                  </div>
                 </div>
               )}
             </>

@@ -1,6 +1,8 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    # 팀장의 과거 작업 기억(벡터 검색)을 위해 pgvector 확장이 이미 컴파일된 이미지를 쓴다.
+    # postgres:16-alpine의 드롭인 대체품이라 기존 볼륨 데이터는 그대로 유지된다.
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: aicrew
       POSTGRES_PASSWORD: aicrew
@@ -17,9 +19,13 @@ services:
     environment:
       DATABASE_URL: postgresql://aicrew:aicrew@postgres:5432/aicrew
       SERVER_PORT: 8080
+      TRANSFORMERS_CACHE: /repo/.transformers-cache
     volumes:
       # agents/*.md를 바인드 마운트 - 직원 정의를 추가/수정해도 이미지 재빌드가 필요 없다.
       - ../agents:/repo/agents:ro
+      # 팀 기억(벡터 검색)용 로컬 임베딩 모델(~90MB) 캐시 - 볼륨 없으면 컨테이너 재빌드마다
+      # 다시 받아야 한다.
+      - aicrew-model-cache:/repo/.transformers-cache
     depends_on:
       - postgres
     ports:
@@ -49,3 +55,4 @@ services:
 volumes:
   aicrew-postgres:
   aicrew-caddy-data:
+  aicrew-model-cache:

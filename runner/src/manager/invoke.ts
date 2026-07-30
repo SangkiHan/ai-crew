@@ -22,6 +22,7 @@ const MCP_TOOL_NAMES = [
   "get_ticket",
   "list_tickets",
   "create_planning_doc",
+  "search_history",
   "ask_user",
 ].map((tool) => `mcp__${MCP_SERVER_NAME}__${tool}`);
 

@@ -1,9 +1,18 @@
 import type { FastifyInstance } from "fastify";
-import { ticketBranchName } from "@ai-crew/shared";
+import { ticketBranchName, type Ticket } from "@ai-crew/shared";
 import { applyQaVerdict, createTicket, getTicket, listTickets, transitionTicket } from "../tickets/store.js";
 import { getEmployeeByName } from "../employees/store.js";
+import { saveMemory } from "../memory/store.js";
 import { pushToAnyRunner, requestManagerInvocation, requestMerge } from "../ws/runner.js";
 import { broadcastToUi } from "../ws/ui.js";
+
+// 팀장이 나중에 search_history로 찾을 수 있도록 완료된 티켓을 임베딩해서 저장한다.
+// 응답을 막지 않는다 (로컬 임베딩이라도 수백ms~1초 걸릴 수 있음).
+function saveTicketMemory(ticket: Ticket): void {
+  saveMemory(ticket.teamId, "ticket", ticket.id, `${ticket.title}\n\n${ticket.spec}`).catch((err) =>
+    console.error("티켓 임베딩 저장 실패:", err)
+  );
+}
 
 interface CreateTicketBody {
   // 팀장의 MCP 툴(create_ticket)이 자기 TEAM_ID를 실어 보낸다 - "다른 팀 직원에게 티켓을
@@ -57,6 +66,7 @@ export function registerTicketRoutes(app: FastifyInstance) {
     // 다른 티켓(예: blocked였다가 재개된 티켓)이 이 작업의 결과를 볼 수 있다.
     if (wasReview && updated.worktreePath) {
       requestMerge(updated.id, updated.project, ticketBranchName(updated.id), updated.worktreePath);
+      saveTicketMemory(updated);
     } else if (!wasReview) {
       // needs_approval -> running: "queued"가 아니라서 store의 changed 리스너가 자동으로
       // 러너에 밀어주지 않는다 - 여기서 직접 밀어줘야 실제로 다시 실행된다.
@@ -99,6 +109,7 @@ export function registerTicketRoutes(app: FastifyInstance) {
       if (pass && ticket.worktreePath) {
         // QA 통과 = done이므로, 승인 때와 마찬가지로 실제 워크트리 브랜치를 메인에 머지해야 한다.
         requestMerge(ticket.id, ticket.project, ticketBranchName(ticket.id), ticket.worktreePath);
+        saveTicketMemory(ticket);
       } else if (!pass && !escalated) {
         await pushToAnyRunner(ticket.id);
       }

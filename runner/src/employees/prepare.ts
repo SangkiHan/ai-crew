@@ -1,3 +1,5 @@
+import { readFile, unlink, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { Employee, RunnerToServerEvent, Ticket } from "@ai-crew/shared";
 import { createWorktree } from "../worktree.js";
 import { projectPath } from "../workspace.js";
@@ -8,6 +10,46 @@ export interface PreparedJob {
   worktreePath: string;
   message: string;
   systemPrompt: string;
+}
+
+function driverPidFile(worktreePath: string): string {
+  return join(worktreePath, ".ai-crew-driver.pid");
+}
+
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// 러너가 재시작(개발 중 코드 수정에 의한 tsx watch 재시작, 또는 크래시 후 재기동)되면
+// recoverAndAssign이 "running" 티켓을 다시 밀어준다. 이전 러너가 띄운 CLI 프로세스는
+// 부모(러너)가 죽어도 자동으로 안 죽고 고아 프로세스로 계속 돌아가는 경우가 있어서, 확인 없이
+// 새 세션을 또 띄우면 같은 티켓에 여러 프로세스가 동시에 도는 사고가 난다 (실제로 겪음).
+// 새로 시작하기 전에 이전 프로세스가 살아있는지 확인하고 정리한다.
+async function killStaleDriverProcess(worktreePath: string): Promise<void> {
+  try {
+    const raw = await readFile(driverPidFile(worktreePath), "utf-8");
+    const pid = Number(raw.trim());
+    if (pid && isAlive(pid)) {
+      console.log(`[runner] 이전 세션(pid ${pid})이 아직 살아있어 정리합니다: ${worktreePath}`);
+      process.kill(pid, "SIGTERM");
+    }
+  } catch {
+    // pid 파일이 없으면 이전 세션이 없었다는 뜻 - 정상.
+  }
+}
+
+export async function writeDriverPid(worktreePath: string, pid: number | null | undefined): Promise<void> {
+  if (!pid) return;
+  await writeFile(driverPidFile(worktreePath), String(pid)).catch(() => {});
+}
+
+export async function clearDriverPid(worktreePath: string): Promise<void> {
+  await unlink(driverPidFile(worktreePath)).catch(() => {});
 }
 
 function toDisallowedBashPatterns(requireApproval: string[]): string[] {
@@ -28,6 +70,7 @@ export async function prepareEmployeeJob(
   }
 
   const { worktreePath } = await createWorktree(projectPath(ticket.project), ticket.project, ticket.id);
+  await killStaleDriverProcess(worktreePath);
   send({ type: "job_meta", ticketId: ticket.id, worktreePath });
   send({
     type: "job_log",
@@ -57,6 +100,7 @@ export async function prepareQaJob(
   if (!ticket.worktreePath) {
     throw new Error(`QA 검증할 워크트리가 없습니다 (ticket ${ticket.id})`);
   }
+  await killStaleDriverProcess(ticket.worktreePath);
   send({
     type: "job_log",
     ticketId: ticket.id,
