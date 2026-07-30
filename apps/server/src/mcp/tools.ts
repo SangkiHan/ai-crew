@@ -50,27 +50,27 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export function createTicket(input: { role: string; project: string; title: string; spec: string }) {
-  return api("/tickets", { method: "POST", body: JSON.stringify(input) });
+  return api("/api/tickets", { method: "POST", body: JSON.stringify(input) });
 }
 
 export function getTicket(id: string) {
-  return api(`/tickets/${id}`);
+  return api(`/api/tickets/${id}`);
 }
 
 export function listTickets(status?: string) {
   const qs = status ? `?status=${encodeURIComponent(status)}` : "";
-  return api(`/tickets${qs}`);
+  return api(`/api/tickets${qs}`);
 }
 
 export async function askUser(question: string) {
-  const created = await api<{ id: string }>("/questions", {
+  const created = await api<{ id: string }>("/api/questions", {
     method: "POST",
     body: JSON.stringify({ text: question }),
   });
   return {
     questionId: created.id,
     note:
-      "질문이 등록되었습니다 (아직 UI가 없어 사람이 GET /questions 로 직접 확인하고 " +
-      `POST /questions/${created.id}/answer 로 답합니다). 답을 기다릴 수 없다면 보수적으로 판단해 진행하세요.`,
+      "질문이 등록되었습니다 (아직 UI에 질문창이 없어 사람이 GET /api/questions 로 직접 확인하고 " +
+      `POST /api/questions/${created.id}/answer 로 답합니다). 답을 기다릴 수 없다면 보수적으로 판단해 진행하세요.`,
   };
 }

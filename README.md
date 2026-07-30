@@ -75,7 +75,13 @@ queued(대기) → assigned(배정) → running(작업중) ─┬→ review(검�
   기존 테스트 컨벤션(`IntegrationTestSupport`)을 따라 테스트를 작성했으며, `./gradlew test`가
   독립적으로 재실행해도 통과함을 확인했다. 메인 저장소(`~/Desktop/Project/puppynote-server`)는
   전혀 건드리지 않고 그대로 `main` 브랜치에 깨끗하게 남아있었다.
-- **아직 안 된 것**: 조직도 UI(4단계), 외부 접속(5단계), Gemini/Codex 직원 연결(6단계).
+- **4단계 (완료)**: React Flow 조직도(`apps/web`) — 팀장/직원 노드, 상태별 색상·펄스 애니메이션,
+  선택한 노드의 티켓 이력과 실시간 로그를 보여주는 DetailPanel, 팀장과 대화하는 ChatBar, `review`/
+  `needs_approval` 티켓에 대한 승인·거부 버튼. **실제 Chrome(Playwright)으로 직접 조작해 검증 완료** —
+  채팅창에 지시를 입력하면 팀장 노드가 초록색으로 바뀌고(`작업중`), 실제 `claude` 응답이 채팅창에
+  스트리밍되고, 티켓이 배정되면 담당 직원 노드가 실시간으로 색이 바뀌고, 노드를 클릭하면 그 직원의
+  로그가 실시간으로 흐르고, `review` 티켓에서 승인 버튼을 누르면 `done`으로 바뀌는 것까지 눈으로 확인했다.
+- **아직 안 된 것**: 외부 접속(5단계), Gemini/Codex 직원 연결(6단계).
 
 ### 알려진 이슈 — macOS 폴더 권한 (Full Disk Access, 해결됨)
 
@@ -98,6 +104,20 @@ queued(대기) → assigned(배정) → running(작업중) ─┬→ review(검�
   씹히는 걸 발견했다 (같은 티켓을 두 경로가 동시에 건드림). 티켓 단위 락(`withTicketLock`)으로 같은
   티켓에 대한 모든 상태 변경을 순서대로 처리하도록 고쳤고, 배정 처리는 이미 assigned 상태면 조용히
   넘어가는 멱등 함수(`ensureAssigned`)로 분리했다.
+
+### 4단계 검증 중 발견해 고친 버그 3가지
+
+- **React Flow `fitView`가 최초 마운트 때만 적용됨**: 페이지가 열릴 때 `agents` 목록이 아직 비어있어
+  팀장 노드 하나만으로 화면이 맞춰지고, 이후 직원 노드가 비동기로 로드돼도 뷰가 재조정되지 않아 노드가
+  화면 아래로 잘려 보였다. `useReactFlow().fitView()`를 노드 개수가 바뀔 때마다 다시 불러주도록 고쳤다.
+- **REST로 승인/거부해도 UI에 반영 안 됨**: 티켓 상태 변경을 UI에 브로드캐스트하는 로직이 러너발 이벤트
+  경로에만 흩어져 있어서, `POST /api/tickets/:id/approve` 같은 REST 경로로 바뀐 상태는 브라우저로
+  전달되지 않았다. 티켓이 바뀔 때 나가는 내부 이벤트(`ticketEvents`) 리스너 한 곳에서 항상 UI로
+  브로드캐스트하도록 정리했다.
+- **zustand 선택자가 안정적인 함수 참조라 리렌더링이 안 됨**: `OrgChart`/`DetailPanel`이
+  `statusForRole`/`ticketsForRole` 같은 헬퍼 *함수*를 구독하고 있었는데, 이 함수 자체는 매번 같은
+  참조라서 실제 티켓 데이터가 바뀌어도 zustand가 리렌더링을 트리거하지 않았다 (승인 버튼을 눌러도
+  화면이 "검수 대기"로 멈춰 있었음). `tickets` 객체 자체를 구독하도록 고쳐서 실시간 반영이 되게 했다.
 
 ## 로컬 실행
 
@@ -133,10 +153,14 @@ pnpm --filter @ai-crew/server mcp:test
 티켓을 만들어 파이프라인이 도는지 확인:
 
 ```bash
-curl -X POST localhost:8080/tickets -H "Content-Type: application/json" \
+curl -X POST localhost:8080/api/tickets -H "Content-Type: application/json" \
   -d '{"role":"backend","project":"puppynote-server","title":"test","spec":"just testing"}'
-curl localhost:8080/tickets
+curl localhost:8080/api/tickets
 ```
+
+조직도 UI는 `docker compose up`으로 뜬 뒤 브라우저에서 `http://localhost` (Caddy 경유)로 접속하면
+된다. 개발 중에는 `pnpm dev:web`으로 Vite dev 서버(`http://localhost:5173`)를 띄우면 `/api`, `/ws`가
+`localhost:8080`으로 자동 프록시된다 (`apps/web/vite.config.ts`).
 
 ## 개발
 
