@@ -7,13 +7,17 @@
     "dev": "pnpm --filter @ai-crew/shared build && tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
+    "mcp": "node dist/mcp/server.js",
+    "mcp:test": "tsx src/mcp/test-client.ts",
     "prisma:generate": "prisma generate"
   },
   "dependencies": {
     "@ai-crew/shared": "workspace:*",
     "@fastify/websocket": "^11.0.2",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@prisma/client": "^5.20.0",
-    "fastify": "^5.1.0"
+    "fastify": "^5.1.0",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "prisma": "^5.20.0",
