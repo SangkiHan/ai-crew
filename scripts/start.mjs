@@ -54,7 +54,19 @@ function isRunning(pid) {
 async function main() {
   if (!existsSync(ENV_PATH)) {
     console.log(".env가 없습니다. 먼저 설정을 진행합니다.\n");
-    run(process.execPath, [join(REPO_ROOT, "scripts", "setup.mjs")]);
+    run(process.execPath, [join(REPO_ROOT, "scripts", "setup.mjs")], {
+      env: { ...process.env, AI_CREW_SKIP_SETUP_HINT: "1" },
+    });
+    console.log();
+  }
+
+  const dockerInfo = spawnSync("docker", ["info"], { stdio: "ignore", cwd: REPO_ROOT });
+  if (dockerInfo.status !== 0) {
+    console.error(
+      "Docker에 연결할 수 없습니다. Docker Desktop이 실행 중인지 확인해주세요 " +
+        "(트레이의 고래 아이콘이 완전히 켜질 때까지 기다린 뒤 다시 실행)."
+    );
+    process.exit(1);
   }
 
   mkdirSync(RUN_DIR, { recursive: true });
