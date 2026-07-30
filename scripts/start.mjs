@@ -14,6 +14,7 @@ const ENV_PATH = join(REPO_ROOT, ".env");
 const RUN_DIR = join(REPO_ROOT, ".run");
 const RUNNER_PID_FILE = join(RUN_DIR, "runner.pid");
 const RUNNER_LOG_FILE = join(RUN_DIR, "runner.log");
+const IS_WINDOWS = process.platform === "win32";
 
 function readEnvValue(key, fallback) {
   if (!existsSync(ENV_PATH)) return fallback;
@@ -22,7 +23,17 @@ function readEnvValue(key, fallback) {
 }
 
 function run(cmd, args, opts = {}) {
-  const result = spawnSync(cmd, args, { stdio: "inherit", cwd: REPO_ROOT, ...opts });
+  // Windows에서 pnpm은 실제 실행파일이 아니라 .cmd 스크립트라서 shell: true 없이는
+  // spawn 자체가 안 되고 status가 null로 조용히 죽는다 (docker.exe는 진짜 바이너리라 문제없음).
+  const result = spawnSync(cmd, args, {
+    stdio: "inherit",
+    cwd: REPO_ROOT,
+    shell: IS_WINDOWS && cmd === "pnpm",
+    ...opts,
+  });
+  if (result.error) {
+    throw new Error(`${cmd} ${args.join(" ")} 실행 실패: ${result.error.message}`);
+  }
   if (result.status !== 0) {
     throw new Error(`${cmd} ${args.join(" ")} exited with code ${result.status}`);
   }
@@ -107,8 +118,12 @@ async function main() {
   const runner = spawn("pnpm", ["--filter", "@ai-crew/runner", "dev"], {
     cwd: REPO_ROOT,
     detached: true,
+    shell: IS_WINDOWS,
     stdio: ["ignore", logFd, logFd],
   });
+  if (runner.pid == null) {
+    throw new Error("러너 프로세스를 시작하지 못했습니다 (pid 없음).");
+  }
   writeFileSync(RUNNER_PID_FILE, String(runner.pid));
   runner.unref();
 
