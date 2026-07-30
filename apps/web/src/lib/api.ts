@@ -1,4 +1,4 @@
-import type { AgentConfig, DriverStatus, Employee, Team, Ticket } from "@ai-crew/shared";
+import type { AgentConfig, DriverStatus, Employee, PlanningDoc, Team, Ticket } from "@ai-crew/shared";
 
 async function json<T>(res: Response): Promise<T> {
   const data = await res.json();
@@ -30,12 +30,32 @@ export function fetchTickets(): Promise<Ticket[]> {
   return fetch("/api/tickets").then((res) => json<Ticket[]>(res));
 }
 
-export function sendChatMessage(teamId: string, message: string): Promise<{ requestId: string }> {
+export function sendChatMessage(
+  teamId: string,
+  message: string,
+  mode?: "chat" | "planning"
+): Promise<{ requestId: string }> {
   return fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ teamId, message }),
+    body: JSON.stringify({ teamId, message, mode }),
   }).then((res) => json<{ requestId: string }>(res));
+}
+
+export function fetchPlanningDocs(teamId: string): Promise<PlanningDoc[]> {
+  return fetch(`/api/planning-docs?teamId=${encodeURIComponent(teamId)}`).then((res) =>
+    json<PlanningDoc[]>(res)
+  );
+}
+
+export function approvePlanningDoc(id: string): Promise<{ doc: PlanningDoc }> {
+  return fetch(`/api/planning-docs/${id}/approve`, { method: "POST" }).then((res) =>
+    json<{ doc: PlanningDoc }>(res)
+  );
+}
+
+export function rejectPlanningDoc(id: string): Promise<PlanningDoc> {
+  return fetch(`/api/planning-docs/${id}/reject`, { method: "POST" }).then((res) => json<PlanningDoc>(res));
 }
 
 export function approveTicket(id: string): Promise<Ticket> {

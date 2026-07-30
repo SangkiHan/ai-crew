@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-import type { Employee } from "@ai-crew/shared";
+import { isQaEmployee, type Employee } from "@ai-crew/shared";
 
 const prisma = new PrismaClient();
 
@@ -46,6 +46,14 @@ export async function getEmployee(id: string): Promise<Employee | null> {
 export async function getEmployeeByName(name: string): Promise<Employee | null> {
   const row = await prisma.employee.findUnique({ where: { name } });
   return row ? toEmployee(row) : null;
+}
+
+// 그 팀에 QA 역할로 보이는 직원이 있는지 찾는다 (taskDescription 키워드 매칭, best-effort).
+// 있으면 개발 티켓 완료 시 사람 승인 전에 자동으로 QA 검증 단계를 거친다.
+export async function findQaEmployee(teamId: string): Promise<Employee | null> {
+  const rows = await prisma.employee.findMany({ where: { teamId } });
+  const match = rows.find((r) => isQaEmployee(r.taskDescription));
+  return match ? toEmployee(match) : null;
 }
 
 export async function createEmployee(input: {

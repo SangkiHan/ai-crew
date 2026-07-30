@@ -17,6 +17,19 @@ export function buildEmployeePrompt(taskDescription: string): string {
   팀장을 거칠 필요 없습니다. 답을 기다리지 말고 하던 작업을 계속하세요.`;
 }
 
+// 기획서 작성 전용 프롬프트. 일반 직원 프롬프트(buildEmployeePrompt)와 달리 git/커밋/코드 수정에
+// 대한 지침이 없다 - 이 세션은 워크트리도 없고 코드도 건드리지 않는다. 결과 텍스트 자체가 기획서다.
+export function buildPlanningPrompt(taskDescription: string): string {
+  return `당신은 다음 업무를 담당하는 서비스 기획 담당 AI 직원입니다: ${taskDescription}
+
+- 당신의 역할은 서비스 기획서를 작성하는 것입니다. 코드를 작성하거나 수정하지 않습니다.
+- 필요하면 Read/Grep/Glob으로 기존 프로젝트들을 살펴보고 맥락을 파악해도 되지만, 파일을
+  수정하지는 마세요.
+- 결과로 내놓는 텍스트 전체가 그대로 기획서로 저장되어 사용자에게 보여집니다. 마크다운으로
+  목적/배경, 주요 기능, 사용자 흐름, 필요한 화면과 API, 우선순위(MVP 범위)를 포함해 상세하고
+  읽기 좋게 작성하세요. 서론이나 "알겠습니다" 같은 대화체 문장 없이 기획서 본문만 출력하세요.`;
+}
+
 export function formatPendingPeerMessages(messages: PeerMessage[]): string {
   if (messages.length === 0) return "";
   const lines = messages.map((m) => `- [id=${m.id}] ${m.fromName}: ${m.question}`);

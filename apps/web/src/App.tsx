@@ -3,6 +3,7 @@ import { OrgChart } from "./OrgChart.js";
 import { DetailPanel } from "./DetailPanel.js";
 import { ChatBar } from "./ChatBar.js";
 import { EmployeeManager } from "./EmployeeManager.js";
+import { PlanningDocPanel } from "./PlanningDocPanel.js";
 import { TeamSwitcher } from "./TeamSwitcher.js";
 import { useStore } from "./store.js";
 import { useUiSocket } from "./lib/ws.js";
@@ -16,6 +17,7 @@ export function App() {
   const setEmployees = useStore((s) => s.setEmployees);
   const setTickets = useStore((s) => s.setTickets);
   const [managingEmployees, setManagingEmployees] = useState(false);
+  const [showPlanningDocs, setShowPlanningDocs] = useState(false);
 
   useUiSocket();
 
@@ -50,7 +52,9 @@ export function App() {
       </header>
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <aside className="w-96 shrink-0 border-r border-slate-800">
-          {selectedTeamId && <ChatBar teamId={selectedTeamId} />}
+          {selectedTeamId && (
+            <ChatBar teamId={selectedTeamId} onOpenPlanningDocs={() => setShowPlanningDocs(true)} />
+          )}
         </aside>
         <main className="min-w-0 flex-1">
           <OrgChart />
@@ -61,6 +65,9 @@ export function App() {
       </div>
       {managingEmployees && selectedTeamId && (
         <EmployeeManager teamId={selectedTeamId} onClose={() => setManagingEmployees(false)} />
+      )}
+      {showPlanningDocs && selectedTeamId && (
+        <PlanningDocPanel teamId={selectedTeamId} onClose={() => setShowPlanningDocs(false)} />
       )}
     </div>
   );

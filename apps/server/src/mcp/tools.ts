@@ -82,6 +82,12 @@ export function reportBlocked(ticketId: string, reason: string) {
   return api(`/api/tickets/${ticketId}/block`, { method: "POST", body: JSON.stringify({ reason }) });
 }
 
+// QA 직원 전용 - report_qa_result MCP 툴이 사용. report_blocked와 같은 패턴으로,
+// 검증 대상 티켓 id는 MCP 서버가 자기 프로세스의 env(TICKET_ID)에서 읽어 넘긴다.
+export function reportQaResult(ticketId: string, pass: boolean, note?: string) {
+  return api(`/api/tickets/${ticketId}/qa-result`, { method: "POST", body: JSON.stringify({ pass, note }) });
+}
+
 export function listEmployees(teamId: string) {
   return api(`/api/employees?teamId=${encodeURIComponent(teamId)}`);
 }
@@ -97,6 +103,11 @@ export function listPeerMessagesFor(toName: string, status = "open") {
 
 export function answerPeerMessage(id: string, answer: string) {
   return api(`/api/peer-messages/${id}/answer`, { method: "POST", body: JSON.stringify({ answer }) });
+}
+
+// 팀장의 create_planning_doc MCP 툴 전용 - 코드 티켓이 아니라 기획서를 만든다.
+export function createPlanningDoc(teamId: string, employeeName: string, request: string) {
+  return api("/api/planning-docs", { method: "POST", body: JSON.stringify({ teamId, employeeName, request }) });
 }
 
 export async function askUser(question: string) {

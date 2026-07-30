@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
-import type { DriverStatus, RunnerToServerEvent, ServerToRunnerEvent } from "@ai-crew/shared";
+import type { DriverStatus, PlanningDoc, RunnerToServerEvent, ServerToRunnerEvent } from "@ai-crew/shared";
 import {
   ensureAssigned,
   findOrphaned,
@@ -10,6 +10,8 @@ import {
   transitionTicket,
   updateMeta,
 } from "../tickets/store.js";
+import { findQaEmployee } from "../employees/store.js";
+import { updatePlanningDocResult } from "../planning/store.js";
 import { broadcastToUi } from "./ui.js";
 
 const runnerSockets = new Set<WebSocket>();
@@ -56,7 +58,27 @@ export function registerRunnerWs(app: FastifyInstance) {
 
 async function handleRunnerEvent(event: RunnerToServerEvent, app: FastifyInstance) {
   if (event.type === "job_status") {
-    await transitionTicket(event.ticketId, event.status);
+    // 개발 완료(review로 가려는 순간) 그 팀에 QA 담당 직원이 있으면 사람 승인 전에
+    // QA 검증 단계(qa_review)를 먼저 거치도록 가로챈다. 없으면 기존과 동일하게 바로 review.
+    // (QA 검증 자체의 결과는 이 경로로 오지 않는다 - QA 직원은 report_qa_result MCP 툴로
+    // POST /api/tickets/:id/qa-result를 직접 호출한다. report_blocked와 같은 패턴이다.)
+    if (event.status === "review") {
+      const ticket = await getTicket(event.ticketId);
+      const qaEmployee = ticket ? await findQaEmployee(ticket.teamId) : null;
+      if (ticket && qaEmployee && qaEmployee.name !== ticket.role) {
+        const updated = await transitionTicket(event.ticketId, "qa_review");
+        await pushToAnyRunner(updated.id);
+      } else {
+        await transitionTicket(event.ticketId, "review");
+      }
+    } else {
+      await transitionTicket(event.ticketId, event.status);
+    }
+  } else if (event.type === "planning_doc_log") {
+    app.log.info({ planningDocId: event.planningDocId }, event.line);
+  } else if (event.type === "planning_doc_result") {
+    const doc = await updatePlanningDocResult(event.planningDocId, event.success, event.content);
+    if (doc) broadcastToUi({ type: "planning_doc_updated", doc });
   } else if (event.type === "job_log") {
     broadcastToUi({ type: "log_line", ticketId: event.ticketId, line: event.line, ts: event.ts });
   } else if (event.type === "job_heartbeat") {
@@ -132,6 +154,21 @@ export function requestMerge(ticketId: string, project: string, branch: string, 
   const socket = [...runnerSockets][0];
   if (!socket) return; // 러너가 없으면 조용히 스킵 - 사람이 나중에 수동으로 머지해야 함
   const event: ServerToRunnerEvent = { type: "merge_ticket", ticketId, project, branch, worktreePath };
+  socket.send(JSON.stringify(event));
+}
+
+// 팀장이 create_planning_doc MCP 툴로 위임하면 호출된다. 실제 기획서 작성은 호스트(러너)에서
+// 그 직원의 CLI 세션으로 진행된다 (worktree/git 없이 텍스트만 생성).
+export function requestPlanningDocJob(doc: PlanningDoc): void {
+  const socket = [...runnerSockets][0];
+  if (!socket) return; // 러너가 없으면 조용히 스킵 - drafting 상태로 남는다 (사람이 나중에 재시도 필요)
+  const event: ServerToRunnerEvent = {
+    type: "planning_doc_assign",
+    planningDocId: doc.id,
+    teamId: doc.teamId,
+    employeeName: doc.employeeName,
+    request: doc.request,
+  };
   socket.send(JSON.stringify(event));
 }
 
