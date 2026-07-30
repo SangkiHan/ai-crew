@@ -15,14 +15,14 @@ const EMPLOYEE_TOOL_NAMES = ["report_blocked", "list_employees", "ask_peer", "an
   (tool) => `mcp__${EMPLOYEE_MCP_SERVER_NAME}__${tool}`
 );
 
-function buildEmployeeMcpConfig(ticketId: string, employeeName: string): string {
+function buildEmployeeMcpConfig(ticketId: string, employeeName: string, teamId: string): string {
   return JSON.stringify({
     mcpServers: {
       [EMPLOYEE_MCP_SERVER_NAME]: {
         type: "stdio",
         command: "node",
         args: [EMPLOYEE_MCP_SERVER_ENTRY],
-        env: { TICKET_ID: ticketId, EMPLOYEE_NAME: employeeName, AI_CREW_SERVER_URL },
+        env: { TICKET_ID: ticketId, EMPLOYEE_NAME: employeeName, TEAM_ID: teamId, AI_CREW_SERVER_URL },
       },
     },
   });
@@ -45,7 +45,7 @@ export async function runClaudeDriver(
     permissionMode: "acceptEdits",
     cwd: worktreePath,
     model: employee.model,
-    mcpConfigJson: buildEmployeeMcpConfig(ticket.id, employee.name),
+    mcpConfigJson: buildEmployeeMcpConfig(ticket.id, employee.name, employee.teamId),
     onEvent: (line) => {
       send({ type: "job_log", ticketId: ticket.id, line, ts: now() });
       send({ type: "job_heartbeat", ticketId: ticket.id, ts: now() });

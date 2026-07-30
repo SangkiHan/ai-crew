@@ -34,8 +34,9 @@ function FitViewOnNodesChange({ nodeCount }: { nodeCount: number }) {
 
 export function OrgChart() {
   const agents = useStore((s) => s.agents);
-  const employees = useStore((s) => s.employees);
-  const managerStatus = useStore((s) => s.managerStatus);
+  const selectedTeamId = useStore((s) => s.selectedTeamId);
+  const allEmployees = useStore((s) => s.employees);
+  const managerStatusByTeam = useStore((s) => s.managerStatusByTeam);
   // statusForRole 자체는 store 안에서 안정적인 함수 참조라 이걸 구독해서는 tickets가
   // 바뀌어도 리렌더링되지 않는다. tickets 객체를 직접 구독해 리렌더링을 트리거하고,
   // 계산은 getState()로 매번 새로 한다.
@@ -43,6 +44,11 @@ export function OrgChart() {
   const setSelectedNode = useStore((s) => s.setSelectedNode);
 
   const manager = agents.find((a) => a.id === "manager");
+  const employees = useMemo(
+    () => allEmployees.filter((e) => e.teamId === selectedTeamId),
+    [allEmployees, selectedTeamId]
+  );
+  const managerStatus = (selectedTeamId && managerStatusByTeam[selectedTeamId]) || "idle";
 
   const { nodes, edges } = useMemo(() => {
     const statusForRole = useStore.getState().statusForRole;

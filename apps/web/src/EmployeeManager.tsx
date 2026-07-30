@@ -22,8 +22,9 @@ function installHint(driver: string): string {
   return "";
 }
 
-export function EmployeeManager({ onClose }: { onClose: () => void }) {
-  const employees = useStore((s) => s.employees);
+export function EmployeeManager({ teamId, onClose }: { teamId: string; onClose: () => void }) {
+  const allEmployees = useStore((s) => s.employees);
+  const employees = allEmployees.filter((e) => e.teamId === teamId);
   const setEmployees = useStore((s) => s.setEmployees);
 
   const [driverStatus, setDriverStatus] = useState<Record<string, DriverStatus>>({});
@@ -47,7 +48,7 @@ export function EmployeeManager({ onClose }: { onClose: () => void }) {
     setSubmitting(true);
     setError(null);
     try {
-      await createEmployee({ name: name.trim(), driver, model: model.trim() || undefined, taskDescription });
+      await createEmployee({ teamId, name: name.trim(), driver, model: model.trim() || undefined, taskDescription });
       setName("");
       setModel("");
       setTaskDescription("");

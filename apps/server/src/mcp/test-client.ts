@@ -1,5 +1,7 @@
 // claude CLI 없이 MCP 서버(apps/server/dist/mcp/server.js)를 직접 stdio로 띄워
 // 5개 툴이 실제로 동작하는지 확인하는 개발용 스크립트. `pnpm --filter @ai-crew/server mcp:test`
+// TEST_TEAM_ID=<실제 팀 id>로 실행하세요 (GET /api/teams). create_ticket의 role도 그 팀에
+// 실제로 존재하는 직원 이름으로 바꿔야 성공합니다 (예시의 "backend"는 예시일 뿐입니다).
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { homedir } from "node:os";
@@ -15,6 +17,8 @@ async function main() {
     env: {
       AI_CREW_SERVER_URL: "http://localhost:8080",
       WORKSPACE_ROOT: join(homedir(), "Desktop", "Project"),
+      // GET /api/teams로 실제 팀 id를 확인해서 바꿔주세요 (여러 팀 기능 추가로 필수 env가 됨).
+      TEAM_ID: process.env.TEST_TEAM_ID ?? "",
     },
   });
 

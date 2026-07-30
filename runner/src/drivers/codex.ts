@@ -13,7 +13,8 @@ function buildMcpConfigFlags(
   entry: string,
   serverUrl: string,
   ticketId: string,
-  employeeName: string
+  employeeName: string,
+  teamId: string
 ): string[] {
   const prefix = `mcp_servers.${EMPLOYEE_MCP_SERVER_NAME}`;
   // Windows 경로는 백슬래시를 쓰는데 TOML 문자열에서 백슬래시는 이스케이프 문자다.
@@ -28,6 +29,8 @@ function buildMcpConfigFlags(
     `${prefix}.env.TICKET_ID="${ticketId}"`,
     "-c",
     `${prefix}.env.EMPLOYEE_NAME="${employeeName}"`,
+    "-c",
+    `${prefix}.env.TEAM_ID="${teamId}"`,
     "-c",
     `${prefix}.env.AI_CREW_SERVER_URL="${serverUrl}"`,
   ];
@@ -78,7 +81,7 @@ export async function runCodexDriver(
     "workspace-write",
     "--skip-git-repo-check",
     ...(employee.model ? ["-m", employee.model] : []),
-    ...buildMcpConfigFlags(EMPLOYEE_MCP_SERVER_ENTRY, AI_CREW_SERVER_URL, ticket.id, employee.name),
+    ...buildMcpConfigFlags(EMPLOYEE_MCP_SERVER_ENTRY, AI_CREW_SERVER_URL, ticket.id, employee.name, employee.teamId),
   ];
   void toDisallowedBashPatterns; // codex sandbox 모델에는 이 패턴을 적용할 자리가 없다 (위 주석 참고)
 

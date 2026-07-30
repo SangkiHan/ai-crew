@@ -1,4 +1,4 @@
-import type { AgentConfig, DriverStatus, Employee, Ticket } from "@ai-crew/shared";
+import type { AgentConfig, DriverStatus, Employee, Team, Ticket } from "@ai-crew/shared";
 
 async function json<T>(res: Response): Promise<T> {
   const data = await res.json();
@@ -10,15 +10,31 @@ export function fetchAgents(): Promise<AgentConfig[]> {
   return fetch("/api/agents").then((res) => json<AgentConfig[]>(res));
 }
 
+export function fetchTeams(): Promise<Team[]> {
+  return fetch("/api/teams").then((res) => json<Team[]>(res));
+}
+
+export function createTeam(name: string): Promise<Team> {
+  return fetch("/api/teams", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  }).then((res) => json<Team>(res));
+}
+
+export function deleteTeam(id: string): Promise<{ ok: true }> {
+  return fetch(`/api/teams/${id}`, { method: "DELETE" }).then((res) => json<{ ok: true }>(res));
+}
+
 export function fetchTickets(): Promise<Ticket[]> {
   return fetch("/api/tickets").then((res) => json<Ticket[]>(res));
 }
 
-export function sendChatMessage(message: string): Promise<{ requestId: string }> {
+export function sendChatMessage(teamId: string, message: string): Promise<{ requestId: string }> {
   return fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ teamId, message }),
   }).then((res) => json<{ requestId: string }>(res));
 }
 
@@ -35,6 +51,7 @@ export function fetchEmployees(): Promise<Employee[]> {
 }
 
 export function createEmployee(input: {
+  teamId: string;
   name: string;
   driver: string;
   model?: string;

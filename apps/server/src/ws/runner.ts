@@ -14,7 +14,8 @@ import { broadcastToUi } from "./ui.js";
 
 const runnerSockets = new Set<WebSocket>();
 let subscribed = false;
-let managerBusy = false;
+// 팀마다 팀장이 독립적으로 바쁠 수 있다 - teamId별로 추적한다.
+const busyTeams = new Set<string>();
 const pendingDriverStatusChecks = new Map<string, (status: Record<string, DriverStatus>) => void>();
 
 export function registerRunnerWs(app: FastifyInstance) {
@@ -66,16 +67,23 @@ async function handleRunnerEvent(event: RunnerToServerEvent, app: FastifyInstanc
       sessionId: event.sessionId,
     });
   } else if (event.type === "manager_log") {
-    broadcastToUi({ type: "manager_log", requestId: event.requestId, line: event.line, ts: event.ts });
+    broadcastToUi({
+      type: "manager_log",
+      teamId: event.teamId,
+      requestId: event.requestId,
+      line: event.line,
+      ts: event.ts,
+    });
   } else if (event.type === "manager_result") {
-    managerBusy = false;
+    busyTeams.delete(event.teamId);
     broadcastToUi({
       type: "manager_result",
+      teamId: event.teamId,
       requestId: event.requestId,
       resultText: event.resultText,
       success: event.success,
     });
-    broadcastToUi({ type: "manager_status", status: "idle" });
+    broadcastToUi({ type: "manager_status", teamId: event.teamId, status: "idle" });
   } else if (event.type === "merge_result") {
     broadcastToUi({
       type: "log_line",
@@ -101,18 +109,20 @@ export interface ManagerInvocationRejected {
   reason: "busy" | "no_runner";
 }
 
-// 브라우저 채팅바 -> 팀장. 한 번에 하나의 팀장 호출만 진행한다 (세션/워크트리 충돌 방지).
+// 브라우저 채팅바 -> 팀장. 같은 팀 안에서는 한 번에 하나의 팀장 호출만 진행한다
+// (세션/워크트리 충돌 방지) - 다른 팀의 팀장은 독립적으로 동시에 호출될 수 있다.
 export function requestManagerInvocation(
+  teamId: string,
   message: string
 ): ManagerInvocationRequest | ManagerInvocationRejected {
-  if (managerBusy) return { ok: false, reason: "busy" };
+  if (busyTeams.has(teamId)) return { ok: false, reason: "busy" };
   const socket = [...runnerSockets][0];
   if (!socket) return { ok: false, reason: "no_runner" };
 
   const requestId = crypto.randomUUID();
-  managerBusy = true;
-  broadcastToUi({ type: "manager_status", status: "busy" });
-  const event: ServerToRunnerEvent = { type: "invoke_manager", requestId, message };
+  busyTeams.add(teamId);
+  broadcastToUi({ type: "manager_status", teamId, status: "busy" });
+  const event: ServerToRunnerEvent = { type: "invoke_manager", requestId, teamId, message };
   socket.send(JSON.stringify(event));
   return { ok: true, requestId };
 }

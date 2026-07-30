@@ -38,7 +38,12 @@ priority = 999
   await writeFile(join(policiesDir, "ai-crew.toml"), rules, "utf-8");
 }
 
-async function writeProjectMcpSettings(worktreePath: string, ticketId: string, employeeName: string): Promise<void> {
+async function writeProjectMcpSettings(
+  worktreePath: string,
+  ticketId: string,
+  employeeName: string,
+  teamId: string
+): Promise<void> {
   const geminiDir = join(worktreePath, ".gemini");
   await mkdir(geminiDir, { recursive: true });
   const settings = {
@@ -46,7 +51,7 @@ async function writeProjectMcpSettings(worktreePath: string, ticketId: string, e
       [EMPLOYEE_MCP_SERVER_NAME]: {
         command: "node",
         args: [EMPLOYEE_MCP_SERVER_ENTRY],
-        env: { TICKET_ID: ticketId, EMPLOYEE_NAME: employeeName, AI_CREW_SERVER_URL },
+        env: { TICKET_ID: ticketId, EMPLOYEE_NAME: employeeName, TEAM_ID: teamId, AI_CREW_SERVER_URL },
       },
     },
   };
@@ -92,7 +97,7 @@ export async function runGeminiDriver(
   const { worktreePath, message, systemPrompt } = await prepareEmployeeJob(ticket, employee, send);
   const now = () => new Date().toISOString();
 
-  await writeProjectMcpSettings(worktreePath, ticket.id, employee.name);
+  await writeProjectMcpSettings(worktreePath, ticket.id, employee.name, employee.teamId);
   await writeGeminiContextFile(worktreePath, systemPrompt);
   await writeBestEffortDenyPolicy(employee.requireApproval);
 

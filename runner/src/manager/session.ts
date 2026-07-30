@@ -5,17 +5,29 @@ import { dirname, join } from "node:path";
 const SESSION_FILE =
   process.env.MANAGER_SESSION_FILE ?? join(homedir(), ".ai-crew", "manager-session.json");
 
-export async function readSessionId(): Promise<string | null> {
+// 팀마다 팀장 대화(세션)가 분리되어야 해서 teamId -> sessionId 맵으로 저장한다.
+// 여러 팀 기능 이전에는 { sessionId } 단일 값이었는데, 이제 { [teamId]: sessionId } 형태다.
+async function readSessionMap(): Promise<Record<string, string>> {
   try {
     const raw = await readFile(SESSION_FILE, "utf-8");
-    const parsed = JSON.parse(raw) as { sessionId?: string };
-    return parsed.sessionId ?? null;
+    const parsed = JSON.parse(raw) as Record<string, string> | { sessionId?: string };
+    if (parsed && typeof parsed === "object" && "sessionId" in parsed) {
+      return {}; // 예전 단일-세션 포맷 - 팀 구분이 없어 그냥 버리고 새로 시작한다.
+    }
+    return parsed as Record<string, string>;
   } catch {
-    return null;
+    return {};
   }
 }
 
-export async function writeSessionId(sessionId: string): Promise<void> {
+export async function readSessionId(teamId: string): Promise<string | null> {
+  const map = await readSessionMap();
+  return map[teamId] ?? null;
+}
+
+export async function writeSessionId(teamId: string, sessionId: string): Promise<void> {
+  const map = await readSessionMap();
+  map[teamId] = sessionId;
   await mkdir(dirname(SESSION_FILE), { recursive: true });
-  await writeFile(SESSION_FILE, JSON.stringify({ sessionId }, null, 2));
+  await writeFile(SESSION_FILE, JSON.stringify(map, null, 2));
 }

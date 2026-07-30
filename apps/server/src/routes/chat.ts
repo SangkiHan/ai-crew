@@ -2,11 +2,12 @@ import type { FastifyInstance } from "fastify";
 import { requestManagerInvocation } from "../ws/runner.js";
 
 export function registerChatRoutes(app: FastifyInstance) {
-  app.post<{ Body: { message: string } }>("/api/chat", async (req, reply) => {
-    const { message } = req.body;
+  app.post<{ Body: { teamId: string; message: string } }>("/api/chat", async (req, reply) => {
+    const { teamId, message } = req.body;
+    if (!teamId) return reply.code(400).send({ error: "teamId is required" });
     if (!message?.trim()) return reply.code(400).send({ error: "message is required" });
 
-    const result = requestManagerInvocation(message);
+    const result = requestManagerInvocation(teamId, message);
     if (!result.ok) {
       const status = result.reason === "busy" ? 409 : 503;
       const error =

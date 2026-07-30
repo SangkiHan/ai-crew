@@ -15,6 +15,7 @@ export interface AgentConfig {
 // (runner/src/employees/prompt.ts) - 저장된 prompt 필드가 없다.
 export interface Employee {
   id: string;
+  teamId: string;
   name: string;
   driver: Driver;
   model?: string;

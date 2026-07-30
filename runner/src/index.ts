@@ -49,15 +49,16 @@ async function runJob(ticket: Ticket): Promise<void> {
 }
 
 // 브라우저 채팅바 -> 서버 -> 여기로 온다. 티켓 큐와는 별개 경로 (동시 실행 수 제한에 안 걸림).
-async function handleInvokeManager(requestId: string, message: string) {
+async function handleInvokeManager(requestId: string, teamId: string, message: string) {
   try {
-    const result = await invokeManager(message, (line) =>
-      send({ type: "manager_log", requestId, line, ts: new Date().toISOString() })
+    const result = await invokeManager(teamId, message, (line) =>
+      send({ type: "manager_log", teamId, requestId, line, ts: new Date().toISOString() })
     );
-    send({ type: "manager_result", requestId, resultText: result.resultText, success: result.success });
+    send({ type: "manager_result", teamId, requestId, resultText: result.resultText, success: result.success });
   } catch (err) {
     send({
       type: "manager_result",
+      teamId,
       requestId,
       resultText: err instanceof Error ? err.message : String(err),
       success: false,
@@ -168,7 +169,7 @@ function connect() {
       queue.push(event.ticket);
       drain();
     } else if (event.type === "invoke_manager") {
-      handleInvokeManager(event.requestId, event.message);
+      handleInvokeManager(event.requestId, event.teamId, event.message);
     } else if (event.type === "merge_ticket") {
       handleMergeTicket(event);
     } else if (event.type === "check_driver_status") {

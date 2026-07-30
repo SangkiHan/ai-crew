@@ -1,10 +1,14 @@
 import type { FastifyInstance } from "fastify";
 import { ticketBranchName } from "@ai-crew/shared";
 import { createTicket, getTicket, listTickets, transitionTicket } from "../tickets/store.js";
+import { getEmployeeByName } from "../employees/store.js";
 import { requestManagerInvocation, requestMerge } from "../ws/runner.js";
 import { broadcastToUi } from "../ws/ui.js";
 
 interface CreateTicketBody {
+  // 팀장의 MCP 툴(create_ticket)이 자기 TEAM_ID를 실어 보낸다 - "다른 팀 직원에게 티켓을
+  // 만들 수 없다"를 서버에서 강제하기 위해서다. role로 찾은 직원의 실제 teamId를 최종값으로 쓴다.
+  teamId?: string;
   role: string;
   project: string;
   title: string;
@@ -14,17 +18,24 @@ interface CreateTicketBody {
 
 export function registerTicketRoutes(app: FastifyInstance) {
   app.post<{ Body: CreateTicketBody }>("/api/tickets", async (req, reply) => {
-    const { role, project, title, spec, parentTicketId } = req.body;
+    const { teamId, role, project, title, spec, parentTicketId } = req.body;
     if (!role || !project || !title || !spec) {
       return reply.code(400).send({ error: "role, project, title, spec are required" });
     }
+    const employee = await getEmployeeByName(role);
+    if (!employee) {
+      return reply.code(400).send({ error: `"${role}" 직원을 찾을 수 없습니다` });
+    }
+    if (teamId && employee.teamId !== teamId) {
+      return reply.code(403).send({ error: `"${role}"은(는) 이 팀 소속이 아닙니다` });
+    }
     // 티켓 push는 store의 ticketEvents("changed") 구독자(ws/runner.ts) 쪽 한 곳에서만 처리한다.
     // 여기서 별도로 pushToAnyRunner를 부르면 같은 티켓이 두 번 assign되는 버그가 생긴다.
-    return createTicket({ role, project, title, spec, parentTicketId });
+    return createTicket({ teamId: employee.teamId, role, project, title, spec, parentTicketId });
   });
 
-  app.get<{ Querystring: { status?: string } }>("/api/tickets", async (req) => {
-    return listTickets(req.query.status);
+  app.get<{ Querystring: { status?: string; teamId?: string } }>("/api/tickets", async (req) => {
+    return listTickets(req.query.status, req.query.teamId);
   });
 
   app.get<{ Params: { id: string } }>("/api/tickets/:id", async (req, reply) => {
@@ -82,7 +93,7 @@ export function registerTicketRoutes(app: FastifyInstance) {
         `list_tickets/get_ticket으로 확인하고, 다른 직원에게 위임이 필요하면 create_ticket으로 ` +
         `새 티켓을 만들되 parentTicketId를 "${ticket.id}"로 설정하세요 - 그 티켓이 done이 되면 ` +
         `이 티켓이 자동으로 재개됩니다.`;
-      requestManagerInvocation(message);
+      requestManagerInvocation(ticket.teamId, message);
 
       return ticket;
     }

@@ -28,6 +28,7 @@ function withTicketLock<T>(id: string, fn: () => Promise<T>): Promise<T> {
 
 function toTicket(row: {
   id: string;
+  teamId: string | null;
   role: string;
   project: string;
   title: string;
@@ -42,6 +43,8 @@ function toTicket(row: {
 }): Ticket {
   return {
     id: row.id,
+    // ensureDefaultTeamAssigned가 부팅 시 채워 넣으므로 실제로는 항상 값이 있다.
+    teamId: row.teamId ?? "",
     role: row.role as Ticket["role"],
     project: row.project,
     title: row.title,
@@ -57,6 +60,7 @@ function toTicket(row: {
 }
 
 export async function createTicket(input: {
+  teamId: string;
   role: string;
   project: string;
   title: string;
@@ -76,9 +80,12 @@ export async function getTicket(id: string): Promise<Ticket | null> {
   return row ? toTicket(row) : null;
 }
 
-export async function listTickets(status?: string): Promise<Ticket[]> {
+export async function listTickets(status?: string, teamId?: string): Promise<Ticket[]> {
+  const where: Record<string, string> = {};
+  if (status) where.status = status;
+  if (teamId) where.teamId = teamId;
   const rows = await prisma.ticket.findMany({
-    where: status ? { status } : undefined,
+    where: Object.keys(where).length ? where : undefined,
     orderBy: { createdAt: "asc" },
   });
   return rows.map(toTicket);

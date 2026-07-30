@@ -51,6 +51,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export function createTicket(input: {
+  teamId: string;
   role: string;
   project: string;
   title: string;
@@ -60,13 +61,19 @@ export function createTicket(input: {
   return api("/api/tickets", { method: "POST", body: JSON.stringify(input) });
 }
 
-export function getTicket(id: string) {
-  return api(`/api/tickets/${id}`);
+// 티켓 상세는 그 티켓의 teamId가 호출한 팀장의 teamId와 같을 때만 보여준다 - 팀 간 격리.
+export async function getTicket(id: string, teamId: string) {
+  const ticket = await api<{ teamId: string }>(`/api/tickets/${id}`);
+  if (ticket.teamId !== teamId) {
+    throw new Error(`티켓 ${id}는 다른 팀 소속이라 조회할 수 없습니다`);
+  }
+  return ticket;
 }
 
-export function listTickets(status?: string) {
-  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
-  return api(`/api/tickets${qs}`);
+export function listTickets(teamId: string, status?: string) {
+  const qs = new URLSearchParams({ teamId });
+  if (status) qs.set("status", status);
+  return api(`/api/tickets?${qs}`);
 }
 
 // 직원(employee) 전용 - report_blocked MCP 툴이 사용. 진행 중인 티켓 하나에 고정되어 있으므로
@@ -75,8 +82,8 @@ export function reportBlocked(ticketId: string, reason: string) {
   return api(`/api/tickets/${ticketId}/block`, { method: "POST", body: JSON.stringify({ reason }) });
 }
 
-export function listEmployees() {
-  return api("/api/employees");
+export function listEmployees(teamId: string) {
+  return api(`/api/employees?teamId=${encodeURIComponent(teamId)}`);
 }
 
 // 직원 간 비동기 소통 - 팀장을 거치지 않는다. 보내는 쪽(fromName)은 답을 기다리지 않고 계속 작업한다.
