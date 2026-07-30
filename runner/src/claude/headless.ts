@@ -7,6 +7,7 @@ export interface HeadlessRunOptions {
   disallowedTools?: string[];
   permissionMode: "default" | "acceptEdits" | "dontAsk" | "bypassPermissions";
   cwd: string;
+  model?: string;
   resumeSessionId?: string;
   mcpConfigJson?: string;
   onEvent?: (line: string) => void;
@@ -60,6 +61,9 @@ export function runClaudeHeadless(opts: HeadlessRunOptions): Promise<HeadlessRun
   ];
   if (opts.disallowedTools?.length) {
     args.push("--disallowedTools", opts.disallowedTools.join(","));
+  }
+  if (opts.model) {
+    args.push("--model", opts.model);
   }
   if (opts.mcpConfigJson) {
     args.push("--mcp-config", opts.mcpConfigJson);

@@ -77,6 +77,7 @@ export async function runCodexDriver(
     "-s",
     "workspace-write",
     "--skip-git-repo-check",
+    ...(employee.model ? ["-m", employee.model] : []),
     ...buildMcpConfigFlags(EMPLOYEE_MCP_SERVER_ENTRY, AI_CREW_SERVER_URL, ticket.id, employee.name),
   ];
   void toDisallowedBashPatterns; // codex sandbox 모델에는 이 패턴을 적용할 자리가 없다 (위 주석 참고)

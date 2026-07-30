@@ -106,6 +106,7 @@ export async function runGeminiDriver(
     "--skip-trust",
     "--session-id",
     sessionId,
+    ...(employee.model ? ["-m", employee.model] : []),
   ];
 
   const success = await new Promise<boolean>((resolve) => {
