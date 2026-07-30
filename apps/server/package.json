@@ -8,6 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "mcp": "node dist/mcp/server.js",
+    "employee-mcp": "node dist/mcp/employee-server.js",
     "mcp:test": "tsx src/mcp/test-client.ts",
     "prisma:generate": "prisma generate"
   },

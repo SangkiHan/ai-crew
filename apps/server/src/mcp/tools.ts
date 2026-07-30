@@ -49,7 +49,13 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export function createTicket(input: { role: string; project: string; title: string; spec: string }) {
+export function createTicket(input: {
+  role: string;
+  project: string;
+  title: string;
+  spec: string;
+  parentTicketId?: string;
+}) {
   return api("/api/tickets", { method: "POST", body: JSON.stringify(input) });
 }
 
@@ -60,6 +66,12 @@ export function getTicket(id: string) {
 export function listTickets(status?: string) {
   const qs = status ? `?status=${encodeURIComponent(status)}` : "";
   return api(`/api/tickets${qs}`);
+}
+
+// 직원(employee) 전용 - report_blocked MCP 툴이 사용. 진행 중인 티켓 하나에 고정되어 있으므로
+// ticketId는 파라미터로 안 받고 MCP 서버가 자기 프로세스의 env(TICKET_ID)에서 읽어 넘긴다.
+export function reportBlocked(ticketId: string, reason: string) {
+  return api(`/api/tickets/${ticketId}/block`, { method: "POST", body: JSON.stringify({ reason }) });
 }
 
 export async function askUser(question: string) {

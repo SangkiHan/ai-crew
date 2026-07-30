@@ -75,6 +75,13 @@ async function handleRunnerEvent(event: RunnerToServerEvent, app: FastifyInstanc
       success: event.success,
     });
     broadcastToUi({ type: "manager_status", status: "idle" });
+  } else if (event.type === "merge_result") {
+    broadcastToUi({
+      type: "log_line",
+      ticketId: event.ticketId,
+      line: `[merge] ${event.success ? "성공" : "실패"}: ${event.message}`,
+      ts: new Date().toISOString(),
+    });
   }
 }
 
@@ -101,6 +108,14 @@ export function requestManagerInvocation(
   const event: ServerToRunnerEvent = { type: "invoke_manager", requestId, message };
   socket.send(JSON.stringify(event));
   return { ok: true, requestId };
+}
+
+// review 티켓이 done으로 승인되면 호출된다. 실제 git merge는 호스트(러너)에서만 가능하다.
+export function requestMerge(ticketId: string, project: string, branch: string, worktreePath: string): void {
+  const socket = [...runnerSockets][0];
+  if (!socket) return; // 러너가 없으면 조용히 스킵 - 사람이 나중에 수동으로 머지해야 함
+  const event: ServerToRunnerEvent = { type: "merge_ticket", ticketId, project, branch, worktreePath };
+  socket.send(JSON.stringify(event));
 }
 
 async function recoverAndAssign(socket: WebSocket) {

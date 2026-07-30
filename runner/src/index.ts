@@ -4,6 +4,8 @@ import { loadEmployeeAgents } from "./agents/registry.js";
 import { runClaudeDriver } from "./drivers/claude.js";
 import { runMock } from "./drivers/mock.js";
 import { invokeManager } from "./manager/invoke.js";
+import { deleteBranch, mergeBranch, removeWorktree } from "./worktree.js";
+import { projectPath } from "./workspace.js";
 
 const SERVER_WS_URL = process.env.SERVER_WS_URL ?? "ws://localhost:8080/ws/runner";
 const MAX_CONCURRENT = Number(process.env.RUNNER_MAX_CONCURRENT ?? 2);
@@ -53,13 +55,53 @@ async function handleInvokeManager(requestId: string, message: string) {
   }
 }
 
+// 사람이 review 티켓을 승인(done)하면 서버가 이걸 보낸다. 실제로 메인 브랜치에 머지하는 건
+// 호스트에서 git을 쓸 수 있는 여기(러너)뿐이다 - 서버는 컨테이너 안이라 프로젝트 폴더가 없다.
+async function handleMergeTicket(event: { ticketId: string; project: string; branch: string; worktreePath: string }) {
+  const repoPath = projectPath(event.project);
+  try {
+    await mergeBranch(repoPath, event.branch, `merge: ${event.branch} (ticket ${event.ticketId})`);
+    await removeWorktree(repoPath, event.worktreePath);
+    await deleteBranch(repoPath, event.branch);
+    send({
+      type: "merge_result",
+      ticketId: event.ticketId,
+      success: true,
+      message: `${event.branch}를 메인 브랜치에 머지하고 워크트리를 정리했습니다.`,
+    });
+  } catch (err) {
+    send({
+      type: "merge_result",
+      ticketId: event.ticketId,
+      success: false,
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 function drain() {
   while (active < MAX_CONCURRENT && queue.length > 0) {
     const ticket = queue.shift()!;
     active++;
     console.log(`[runner] starting ${ticket.id} (${ticket.project}) - active=${active}, queued=${queue.length}`);
     runJob(ticket)
-      .catch((err) => console.error(`[runner] job ${ticket.id} failed`, err))
+      .catch((err) => {
+        console.error(`[runner] job ${ticket.id} failed`, err);
+        // 드라이버가 예외로 죽으면(예: worktree 생성 실패) 티켓 상태를 아무도 안 바꿔서
+        // running에 영원히 멈춘다. failed로 보내 사람이 보게 한다 - 이미 다른 종료 상태로
+        // 전이된 경우(예: report_blocked 호출 후 죽음)엔 서버가 유효하지 않은 전이로 조용히 거부한다.
+        send({
+          type: "job_status",
+          ticketId: ticket.id,
+          status: "failed",
+        });
+        send({
+          type: "job_log",
+          ticketId: ticket.id,
+          line: `[runner] 예외로 중단됨: ${err instanceof Error ? err.message : String(err)}`,
+          ts: new Date().toISOString(),
+        });
+      })
       .finally(() => {
         active--;
         console.log(`[runner] finished ${ticket.id} - active=${active}, queued=${queue.length}`);
@@ -82,6 +124,8 @@ function connect() {
       drain();
     } else if (event.type === "invoke_manager") {
       handleInvokeManager(event.requestId, event.message);
+    } else if (event.type === "merge_ticket") {
+      handleMergeTicket(event);
     }
   });
 

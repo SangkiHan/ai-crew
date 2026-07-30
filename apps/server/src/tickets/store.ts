@@ -61,6 +61,7 @@ export async function createTicket(input: {
   project: string;
   title: string;
   spec: string;
+  parentTicketId?: string | null;
 }): Promise<Ticket> {
   const row = await prisma.ticket.create({
     data: { ...input, status: "queued" },
@@ -93,17 +94,28 @@ export async function findOrphaned(): Promise<Ticket[]> {
 }
 
 export async function transitionTicket(id: string, to: TicketStatus): Promise<Ticket> {
-  return withTicketLock(id, async () => {
+  const ticket = await withTicketLock(id, async () => {
     const current = await prisma.ticket.findUniqueOrThrow({ where: { id } });
     const from = current.status as TicketStatus;
     if (!canTransition(from, to)) {
       throw new Error(`invalid ticket transition ${from} -> ${to} (ticket ${id})`);
     }
     const row = await prisma.ticket.update({ where: { id }, data: { status: to } });
-    const ticket = toTicket(row);
-    ticketEvents.emit("changed", ticket);
-    return ticket;
+    const t = toTicket(row);
+    ticketEvents.emit("changed", t);
+    return t;
   });
+
+  // 이 티켓이 다른(blocked) 티켓을 풀어주려고 팀장이 만든 것이었다면, done이 되는 순간
+  // 원래 막혀있던 티켓을 자동으로 재개시킨다 (blocked -> queued -> 러너가 다시 집어간다).
+  if (to === "done" && ticket.parentTicketId) {
+    const parent = await getTicket(ticket.parentTicketId);
+    if (parent?.status === "blocked") {
+      await transitionTicket(parent.id, "queued");
+    }
+  }
+
+  return ticket;
 }
 
 // 큐에 있던 티켓을 "배정됨"으로 표시한다. 이미 assigned/running 등으로 넘어갔다면
