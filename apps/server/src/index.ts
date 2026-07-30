@@ -5,6 +5,9 @@ import { registerTicketRoutes } from "./routes/tickets.js";
 import { registerQuestionRoutes } from "./routes/questions.js";
 import { registerChatRoutes } from "./routes/chat.js";
 import { registerAgentRoutes } from "./routes/agents.js";
+import { registerEmployeeRoutes } from "./routes/employees.js";
+import { registerPeerMessageRoutes } from "./routes/peer-messages.js";
+import { registerDriverRoutes } from "./routes/drivers.js";
 import { registerUiWs } from "./ws/ui.js";
 import { registerRunnerWs } from "./ws/runner.js";
 
@@ -20,6 +23,9 @@ async function main() {
   registerQuestionRoutes(app);
   registerChatRoutes(app);
   registerAgentRoutes(app);
+  registerEmployeeRoutes(app);
+  registerPeerMessageRoutes(app);
+  registerDriverRoutes(app);
   registerUiWs(app);
   registerRunnerWs(app);
 

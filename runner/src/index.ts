@@ -1,7 +1,11 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import WebSocket from "ws";
-import type { RunnerToServerEvent, ServerToRunnerEvent, Ticket } from "@ai-crew/shared";
-import { loadEmployeeAgents } from "./agents/registry.js";
+import type { DriverStatus, RunnerToServerEvent, ServerToRunnerEvent, Ticket } from "@ai-crew/shared";
+import { fetchEmployees } from "./employees/api.js";
 import { runClaudeDriver } from "./drivers/claude.js";
+import { runGeminiDriver } from "./drivers/gemini.js";
+import { runCodexDriver } from "./drivers/codex.js";
 import { runMock } from "./drivers/mock.js";
 import { invokeManager } from "./manager/invoke.js";
 import { deleteBranch, mergeBranch, removeWorktree } from "./worktree.js";
@@ -14,8 +18,6 @@ const RECONNECT_DELAY_MS = 2000;
 let ws: WebSocket;
 let active = 0;
 const queue: Ticket[] = [];
-const agents = await loadEmployeeAgents();
-console.log(`[runner] loaded agents: ${[...agents.keys()].join(", ") || "(none)"}`);
 
 function send(event: RunnerToServerEvent) {
   if (ws.readyState === WebSocket.OPEN) {
@@ -23,19 +25,28 @@ function send(event: RunnerToServerEvent) {
   }
 }
 
-// role(=agents/*.md의 id)에 맞는 드라이버로 위임한다. driver가 아직 없는 역할(gemini/codex, 6단계)은
-// mock으로 대체해 파이프라인 검증은 계속 가능하게 한다.
-function runJob(ticket: Ticket): Promise<void> {
-  const agent = agents.get(ticket.role);
-  if (agent?.driver === "claude") {
-    return runClaudeDriver(ticket, agent, send);
+// 직원 명단은 파일이 아니라 서버(DB)에서 매번 새로 가져온다 - 웹에서 직원을 추가/삭제해도
+// 러너 재시작이 필요 없다. ticket.role은 직원의 name과 같다.
+async function runJob(ticket: Ticket): Promise<void> {
+  const employees = await fetchEmployees();
+  const employee = employees.find((e) => e.name === ticket.role);
+
+  if (!employee) {
+    console.log(`[runner] role "${ticket.role}"에 맞는 직원이 없어 mock으로 대체합니다`);
+    return runMock(ticket, send);
   }
-  if (agent) {
-    console.log(`[runner] "${agent.driver}" 드라이버는 아직 없어 mock으로 대체합니다 (role=${ticket.role})`);
-  } else {
-    console.log(`[runner] role "${ticket.role}"에 맞는 agents/*.md가 없어 mock으로 대체합니다`);
+
+  switch (employee.driver) {
+    case "claude":
+      return runClaudeDriver(ticket, employee, send);
+    case "gemini":
+      return runGeminiDriver(ticket, employee, send);
+    case "codex":
+      return runCodexDriver(ticket, employee, send);
+    default:
+      console.log(`[runner] "${employee.driver}" 드라이버는 아직 없어 mock으로 대체합니다`);
+      return runMock(ticket, send);
   }
-  return runMock(ticket, send);
 }
 
 // 브라우저 채팅바 -> 서버 -> 여기로 온다. 티켓 큐와는 별개 경로 (동시 실행 수 제한에 안 걸림).
@@ -77,6 +88,28 @@ async function handleMergeTicket(event: { ticketId: string; project: string; bra
       message: err instanceof Error ? err.message : String(err),
     });
   }
+}
+
+const execFileAsync = promisify(execFile);
+const DRIVER_BINARIES: Record<string, string> = { claude: "claude", gemini: "gemini", codex: "codex" };
+
+// 웹 UI에서 직원을 추가할 때 "이 CLI가 이 맥에 설치돼 있나" 보여주기 위한 것. 설치 여부만
+// 확인한다 - 로그인(OAuth) 여부는 브라우저에서 대신 눌러줄 수 있는 게 아니라서 실제로 티켓을
+// 돌려봐야 알 수 있다 (인증 실패 시 job 로그에 에러가 그대로 보인다).
+async function handleCheckDriverStatus(requestId: string) {
+  const status: Record<string, DriverStatus> = {};
+  for (const [driver, bin] of Object.entries(DRIVER_BINARIES)) {
+    try {
+      const { stdout } = await execFileAsync(bin, ["--version"]);
+      status[driver] = { installed: true, versionOrError: stdout.trim() };
+    } catch (err) {
+      status[driver] = {
+        installed: false,
+        versionOrError: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+  send({ type: "driver_status_result", requestId, status });
 }
 
 function drain() {
@@ -126,6 +159,8 @@ function connect() {
       handleInvokeManager(event.requestId, event.message);
     } else if (event.type === "merge_ticket") {
       handleMergeTicket(event);
+    } else if (event.type === "check_driver_status") {
+      handleCheckDriverStatus(event.requestId);
     }
   });
 

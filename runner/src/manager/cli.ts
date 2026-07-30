@@ -1,4 +1,15 @@
-import { invokeManager } from "./invoke.js";
+// bootstrap.ts와 같은 이유로 .env 로딩을 동적 import보다 먼저 한다.
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+const envPath = join(REPO_ROOT, ".env");
+if (existsSync(envPath)) {
+  process.loadEnvFile(envPath);
+}
+
+const { invokeManager } = await import("./invoke.js");
 
 const message = process.argv.slice(2).join(" ");
 if (!message) {

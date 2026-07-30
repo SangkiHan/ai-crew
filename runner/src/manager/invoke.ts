@@ -1,4 +1,5 @@
 import { dirname, join } from "node:path";
+import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { loadAgentDefinition } from "../agents/load.js";
 import { runClaudeHeadless } from "../claude/headless.js";
@@ -11,12 +12,17 @@ const AGENT_DEFINITION_PATH = process.env.MANAGER_AGENT_MD ?? join(REPO_ROOT, "a
 const MCP_SERVER_ENTRY = process.env.MCP_SERVER_ENTRY ?? join(REPO_ROOT, "apps", "server", "dist", "mcp", "server.js");
 const MANAGER_CWD = process.env.MANAGER_CWD ?? REPO_ROOT;
 const AI_CREW_SERVER_URL = process.env.AI_CREW_SERVER_URL ?? "http://localhost:8080";
-const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT ?? join(process.env.HOME ?? "", "Desktop/Project");
+const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT ?? join(homedir(), "Desktop", "Project");
 
 const MCP_SERVER_NAME = "ai-crew-manager-tools";
-const MCP_TOOL_NAMES = ["list_projects", "create_ticket", "get_ticket", "list_tickets", "ask_user"].map(
-  (tool) => `mcp__${MCP_SERVER_NAME}__${tool}`
-);
+const MCP_TOOL_NAMES = [
+  "list_projects",
+  "list_employees",
+  "create_ticket",
+  "get_ticket",
+  "list_tickets",
+  "ask_user",
+].map((tool) => `mcp__${MCP_SERVER_NAME}__${tool}`);
 
 export interface ManagerResult {
   sessionId: string;

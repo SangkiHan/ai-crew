@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
-import type { RunnerToServerEvent, ServerToRunnerEvent } from "@ai-crew/shared";
+import type { DriverStatus, RunnerToServerEvent, ServerToRunnerEvent } from "@ai-crew/shared";
 import {
   ensureAssigned,
   findOrphaned,
@@ -15,6 +15,7 @@ import { broadcastToUi } from "./ui.js";
 const runnerSockets = new Set<WebSocket>();
 let subscribed = false;
 let managerBusy = false;
+const pendingDriverStatusChecks = new Map<string, (status: Record<string, DriverStatus>) => void>();
 
 export function registerRunnerWs(app: FastifyInstance) {
   app.get("/ws/runner", { websocket: true }, (socket: WebSocket) => {
@@ -82,6 +83,12 @@ async function handleRunnerEvent(event: RunnerToServerEvent, app: FastifyInstanc
       line: `[merge] ${event.success ? "성공" : "실패"}: ${event.message}`,
       ts: new Date().toISOString(),
     });
+  } else if (event.type === "driver_status_result") {
+    const resolve = pendingDriverStatusChecks.get(event.requestId);
+    if (resolve) {
+      resolve(event.status);
+      pendingDriverStatusChecks.delete(event.requestId);
+    }
   }
 }
 
@@ -116,6 +123,28 @@ export function requestMerge(ticketId: string, project: string, branch: string, 
   if (!socket) return; // 러너가 없으면 조용히 스킵 - 사람이 나중에 수동으로 머지해야 함
   const event: ServerToRunnerEvent = { type: "merge_ticket", ticketId, project, branch, worktreePath };
   socket.send(JSON.stringify(event));
+}
+
+// 웹 UI의 직원 추가 폼에서 "이 CLI 설치돼 있나요?" 확인할 때 쓴다. 러너가 없거나 5초 안에
+// 응답이 없으면 빈 상태로 반환한다 (UI는 "확인 불가"로 표시하면 된다).
+export async function requestDriverStatus(): Promise<Record<string, DriverStatus>> {
+  const socket = [...runnerSockets][0];
+  if (!socket) return {};
+
+  const requestId = crypto.randomUUID();
+  const event: ServerToRunnerEvent = { type: "check_driver_status", requestId };
+
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      pendingDriverStatusChecks.delete(requestId);
+      resolve({});
+    }, 5000);
+    pendingDriverStatusChecks.set(requestId, (status) => {
+      clearTimeout(timeout);
+      resolve(status);
+    });
+    socket.send(JSON.stringify(event));
+  });
 }
 
 async function recoverAndAssign(socket: WebSocket) {

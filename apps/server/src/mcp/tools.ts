@@ -1,9 +1,10 @@
 import { readdir, access } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ProjectInfo } from "@ai-crew/shared";
 
 const SERVER_URL = process.env.AI_CREW_SERVER_URL ?? "http://localhost:8080";
-const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT ?? join(process.env.HOME ?? "", "Desktop/Project");
+const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT ?? join(homedir(), "Desktop", "Project");
 
 async function exists(path: string): Promise<boolean> {
   try {
@@ -72,6 +73,23 @@ export function listTickets(status?: string) {
 // ticketId는 파라미터로 안 받고 MCP 서버가 자기 프로세스의 env(TICKET_ID)에서 읽어 넘긴다.
 export function reportBlocked(ticketId: string, reason: string) {
   return api(`/api/tickets/${ticketId}/block`, { method: "POST", body: JSON.stringify({ reason }) });
+}
+
+export function listEmployees() {
+  return api("/api/employees");
+}
+
+// 직원 간 비동기 소통 - 팀장을 거치지 않는다. 보내는 쪽(fromName)은 답을 기다리지 않고 계속 작업한다.
+export function askPeer(fromName: string, toName: string, question: string) {
+  return api("/api/peer-messages", { method: "POST", body: JSON.stringify({ fromName, toName, question }) });
+}
+
+export function listPeerMessagesFor(toName: string, status = "open") {
+  return api(`/api/peer-messages?toName=${encodeURIComponent(toName)}&status=${status}`);
+}
+
+export function answerPeerMessage(id: string, answer: string) {
+  return api(`/api/peer-messages/${id}/answer`, { method: "POST", body: JSON.stringify({ answer }) });
 }
 
 export async function askUser(question: string) {

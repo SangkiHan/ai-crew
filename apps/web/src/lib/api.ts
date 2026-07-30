@@ -1,4 +1,4 @@
-import type { AgentConfig, Ticket } from "@ai-crew/shared";
+import type { AgentConfig, DriverStatus, Employee, Ticket } from "@ai-crew/shared";
 
 async function json<T>(res: Response): Promise<T> {
   const data = await res.json();
@@ -28,4 +28,29 @@ export function approveTicket(id: string): Promise<Ticket> {
 
 export function rejectTicket(id: string): Promise<Ticket> {
   return fetch(`/api/tickets/${id}/reject`, { method: "POST" }).then((res) => json<Ticket>(res));
+}
+
+export function fetchEmployees(): Promise<Employee[]> {
+  return fetch("/api/employees").then((res) => json<Employee[]>(res));
+}
+
+export function createEmployee(input: {
+  name: string;
+  driver: string;
+  model?: string;
+  taskDescription: string;
+}): Promise<Employee> {
+  return fetch("/api/employees", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  }).then((res) => json<Employee>(res));
+}
+
+export function deleteEmployee(id: string): Promise<{ ok: true }> {
+  return fetch(`/api/employees/${id}`, { method: "DELETE" }).then((res) => json<{ ok: true }>(res));
+}
+
+export function fetchDriverStatus(): Promise<Record<string, DriverStatus>> {
+  return fetch("/api/driver-status").then((res) => json<Record<string, DriverStatus>>(res));
 }

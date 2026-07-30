@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AgentConfig, ServerToUiEvent, Ticket } from "@ai-crew/shared";
+import type { AgentConfig, Employee, ServerToUiEvent, Ticket } from "@ai-crew/shared";
 import { sendChatMessage } from "./lib/api.js";
 
 export interface LogLine {
@@ -16,7 +16,8 @@ export interface ChatMessage {
 }
 
 interface StoreState {
-  agents: AgentConfig[];
+  agents: AgentConfig[]; // 팀장 하나뿐 (agents/manager.md)
+  employees: Employee[]; // 웹에서 추가/삭제하는 직원들 (DB)
   tickets: Record<string, Ticket>;
   logsByTicket: Record<string, LogLine[]>;
   managerStatus: "idle" | "busy";
@@ -24,6 +25,7 @@ interface StoreState {
   selectedNodeId: string | null;
 
   setAgents: (agents: AgentConfig[]) => void;
+  setEmployees: (employees: Employee[]) => void;
   setTickets: (tickets: Ticket[]) => void;
   setSelectedNode: (id: string | null) => void;
   sendUserMessage: (text: string) => Promise<void>;
@@ -37,6 +39,7 @@ const MAX_LOG_LINES = 500;
 
 export const useStore = create<StoreState>((set, get) => ({
   agents: [],
+  employees: [],
   tickets: {},
   logsByTicket: {},
   managerStatus: "idle",
@@ -44,6 +47,7 @@ export const useStore = create<StoreState>((set, get) => ({
   selectedNodeId: "manager",
 
   setAgents: (agents) => set({ agents }),
+  setEmployees: (employees) => set({ employees }),
 
   setTickets: (tickets) =>
     set({ tickets: Object.fromEntries(tickets.map((t) => [t.id, t])) }),

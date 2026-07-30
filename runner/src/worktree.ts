@@ -1,12 +1,13 @@
 import { execFile } from "node:child_process";
 import { mkdir, access } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { ticketBranchName } from "@ai-crew/shared";
 
 const execFileAsync = promisify(execFile);
 
-const WORKTREES_ROOT = process.env.WORKTREES_ROOT ?? join(process.env.HOME ?? "", ".ai-crew", "worktrees");
+const WORKTREES_ROOT = process.env.WORKTREES_ROOT ?? join(homedir(), ".ai-crew", "worktrees");
 
 export interface Worktree {
   branch: string;

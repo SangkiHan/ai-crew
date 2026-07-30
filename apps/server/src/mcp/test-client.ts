@@ -2,6 +2,7 @@
 // 5개 툴이 실제로 동작하는지 확인하는 개발용 스크립트. `pnpm --filter @ai-crew/server mcp:test`
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { homedir } from "node:os";
 import { join } from "node:path";
 
 const REPO_ROOT = join(import.meta.dirname, "..", "..", "..", "..");
@@ -13,7 +14,7 @@ async function main() {
     args: [SERVER_ENTRY],
     env: {
       AI_CREW_SERVER_URL: "http://localhost:8080",
-      WORKSPACE_ROOT: join(process.env.HOME ?? "", "Desktop/Project"),
+      WORKSPACE_ROOT: join(homedir(), "Desktop", "Project"),
     },
   });
 
