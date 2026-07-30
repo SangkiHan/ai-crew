@@ -1,10 +1,23 @@
 import type { FastifyInstance } from "fastify";
+import type { WebSocket } from "ws";
+import type { ServerToUiEvent } from "@ai-crew/shared";
 
-// 1단계에서 UI 스트림(티켓 업데이트, 로그) 브로드캐스트로 채워질 자리
+const uiSockets = new Set<WebSocket>();
+
 export function registerUiWs(app: FastifyInstance) {
-  app.get("/ws/ui", { websocket: true }, (socket) => {
-    socket.on("message", () => {
-      // placeholder: 1단계에서 UiToServerEvent 파싱 추가
+  app.get("/ws/ui", { websocket: true }, (socket: WebSocket) => {
+    uiSockets.add(socket);
+    app.log.info("ui client connected");
+
+    socket.on("close", () => {
+      uiSockets.delete(socket);
     });
   });
+}
+
+export function broadcastToUi(event: ServerToUiEvent) {
+  const payload = JSON.stringify(event);
+  for (const socket of uiSockets) {
+    if (socket.readyState === socket.OPEN) socket.send(payload);
+  }
 }

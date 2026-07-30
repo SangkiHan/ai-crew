@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import websocketPlugin from "@fastify/websocket";
 import { registerHealthRoute } from "./routes/health.js";
+import { registerTicketRoutes } from "./routes/tickets.js";
 import { registerUiWs } from "./ws/ui.js";
 import { registerRunnerWs } from "./ws/runner.js";
 
@@ -12,6 +13,7 @@ async function main() {
   await app.register(websocketPlugin);
 
   registerHealthRoute(app);
+  registerTicketRoutes(app);
   registerUiWs(app);
   registerRunnerWs(app);
 

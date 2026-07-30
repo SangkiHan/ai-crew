@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "pnpm --filter @ai-crew/shared build && tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "prisma:generate": "prisma generate"
@@ -19,6 +19,7 @@
     "prisma": "^5.20.0",
     "tsx": "^4.19.2",
     "typescript": "^5.6.0",
-    "@types/node": "^22.7.5"
+    "@types/node": "^22.7.5",
+    "@types/ws": "^8.5.12"
   }
 }
