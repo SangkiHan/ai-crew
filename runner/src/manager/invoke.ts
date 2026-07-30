@@ -61,6 +61,7 @@ export async function invokeManager(
     allowedTools: [...agent.allowedTools, ...MCP_TOOL_NAMES],
     permissionMode: "dontAsk",
     cwd: MANAGER_CWD,
+    model: agent.model,
     resumeSessionId: previousSessionId ?? undefined,
     mcpConfigJson: buildMcpConfig(),
     onEvent,

@@ -44,6 +44,7 @@ export async function runClaudeDriver(
     disallowedTools: toDisallowedBashPatterns(employee.requireApproval),
     permissionMode: "acceptEdits",
     cwd: worktreePath,
+    model: employee.model,
     mcpConfigJson: buildEmployeeMcpConfig(ticket.id, employee.name),
     onEvent: (line) => {
       send({ type: "job_log", ticketId: ticket.id, line, ts: now() });

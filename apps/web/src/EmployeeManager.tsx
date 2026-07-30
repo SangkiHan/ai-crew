@@ -149,7 +149,7 @@ export function EmployeeManager({ onClose }: { onClose: () => void }) {
               <input
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
-                placeholder="모델 (선택, 예: sonnet)"
+                placeholder="모델 (선택, 예: sonnet) - 비워두면 그 CLI의 기본 모델을 씁니다"
                 className="rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500"
               />
 
