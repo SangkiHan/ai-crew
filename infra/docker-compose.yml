@@ -17,6 +17,9 @@ services:
     environment:
       DATABASE_URL: postgresql://aicrew:aicrew@postgres:5432/aicrew
       SERVER_PORT: 8080
+    volumes:
+      # agents/*.md를 바인드 마운트 - 직원 정의를 추가/수정해도 이미지 재빌드가 필요 없다.
+      - ../agents:/repo/agents:ro
     depends_on:
       - postgres
     ports:

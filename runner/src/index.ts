@@ -3,6 +3,7 @@ import type { RunnerToServerEvent, ServerToRunnerEvent, Ticket } from "@ai-crew/
 import { loadEmployeeAgents } from "./agents/registry.js";
 import { runClaudeDriver } from "./drivers/claude.js";
 import { runMock } from "./drivers/mock.js";
+import { invokeManager } from "./manager/invoke.js";
 
 const SERVER_WS_URL = process.env.SERVER_WS_URL ?? "ws://localhost:8080/ws/runner";
 const MAX_CONCURRENT = Number(process.env.RUNNER_MAX_CONCURRENT ?? 2);
@@ -35,6 +36,23 @@ function runJob(ticket: Ticket): Promise<void> {
   return runMock(ticket, send);
 }
 
+// 브라우저 채팅바 -> 서버 -> 여기로 온다. 티켓 큐와는 별개 경로 (동시 실행 수 제한에 안 걸림).
+async function handleInvokeManager(requestId: string, message: string) {
+  try {
+    const result = await invokeManager(message, (line) =>
+      send({ type: "manager_log", requestId, line, ts: new Date().toISOString() })
+    );
+    send({ type: "manager_result", requestId, resultText: result.resultText, success: result.success });
+  } catch (err) {
+    send({
+      type: "manager_result",
+      requestId,
+      resultText: err instanceof Error ? err.message : String(err),
+      success: false,
+    });
+  }
+}
+
 function drain() {
   while (active < MAX_CONCURRENT && queue.length > 0) {
     const ticket = queue.shift()!;
@@ -62,6 +80,8 @@ function connect() {
     if (event.type === "job_assign") {
       queue.push(event.ticket);
       drain();
+    } else if (event.type === "invoke_manager") {
+      handleInvokeManager(event.requestId, event.message);
     }
   });
 

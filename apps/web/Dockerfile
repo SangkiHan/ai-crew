@@ -11,7 +11,10 @@ COPY runner/package.json runner/package.json
 RUN pnpm install --filter @ai-crew/web... --frozen-lockfile
 
 FROM deps AS build
+COPY tsconfig.base.json ./
+COPY packages/shared packages/shared
 COPY apps/web apps/web
+RUN pnpm --filter @ai-crew/shared build
 RUN pnpm --filter @ai-crew/web build
 
 FROM nginx:alpine AS runtime
