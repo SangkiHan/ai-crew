@@ -7,6 +7,7 @@
   },
   "scripts": {
     "setup": "node scripts/setup.mjs",
+    "start": "node scripts/start.mjs",
     "dev:server": "pnpm --filter @ai-crew/server dev",
     "dev:runner": "pnpm --filter @ai-crew/runner dev",
     "dev:web": "pnpm --filter @ai-crew/web dev",
