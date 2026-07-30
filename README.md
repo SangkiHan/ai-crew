@@ -65,21 +65,39 @@ queued(대기) → assigned(배정) → running(작업중) ─┬→ review(검�
   이어받아 끝까지 완료한다.
 - **2단계 (완료)**: 팀장에게 물릴 MCP 툴 5개(`list_projects`, `create_ticket`, `get_ticket`,
   `list_tickets`, `ask_user`)와, `claude -p` 헤드리스 프로세스를 스폰해 세션을 `--resume`으로 이어가는
-  러너 쪽 매니저 호출기(`runner/src/manager/`)를 구현했다. `create_ticket`/`get_ticket`/`list_tickets`/
-  `ask_user`는 MCP 클라이언트로 직접 호출해 정상 동작을 확인했다.
-- **아직 안 된 것**: 직원이 실제 코드를 고치는 것(3단계), 조직도 UI(4단계), 외부 접속(5단계),
-  Gemini/Codex 직원 연결(6단계).
+  러너 쪽 매니저 호출기(`runner/src/manager/`)를 구현했다. **실제 `claude` CLI로 검증 완료** — "puppynote-server
+  프로젝트에 테스트용 티켓을 만들어줘" 라고 지시하면 팀장이 `list_projects`로 존재를 확인한 뒤
+  `create_ticket`을 호출해 실제 티켓이 생성되는 것까지 확인했다.
+- **3단계 (완료)**: 실제 백엔드 직원(Claude)이 `agents/backend.md` 규칙에 따라 git worktree 안에서
+  작업하는 드라이버(`runner/src/drivers/claude.ts`)를 구현했다. **실제 시나리오로 검증 완료** —
+  "puppynote-server에 `/actuator/health` 노출하고 테스트 추가해줘" 티켓을 실행시켰더니, 격리된
+  worktree에서 실제 커밋(`feat: actuator health 엔드포인트 노출 및 테스트 추가`)이 생성됐고, 프로젝트의
+  기존 테스트 컨벤션(`IntegrationTestSupport`)을 따라 테스트를 작성했으며, `./gradlew test`가
+  독립적으로 재실행해도 통과함을 확인했다. 메인 저장소(`~/Desktop/Project/puppynote-server`)는
+  전혀 건드리지 않고 그대로 `main` 브랜치에 깨끗하게 남아있었다.
+- **아직 안 된 것**: 조직도 UI(4단계), 외부 접속(5단계), Gemini/Codex 직원 연결(6단계).
 
-### 알려진 이슈 — macOS 폴더 권한 (Full Disk Access 필요)
+### 알려진 이슈 — macOS 폴더 권한 (Full Disk Access, 해결됨)
 
-`list_projects`가 `WORKSPACE_ROOT`(`~/Desktop/Project`)를 스캔하려고 `fs.readdir`를 호출하면
-macOS의 TCC(개인정보 보호) 정책 때문에 **Node.js가 `EPERM: operation not permitted, scandir`로
-막힌다.** `~/Desktop`, `~/Documents`, `~/Downloads`는 macOS가 특별히 보호하는 폴더라, 그 안의 내용을
-읽으려는 앱은 권한을 받아야 한다 (같은 코드로 `~/ai-crew`처럼 Desktop 밖의 폴더를 스캔하면 문제없이 된다).
+`list_projects`가 `WORKSPACE_ROOT`(`~/Desktop/Project`)를 스캔하거나 `claude` CLI 자체를 실행하려고
+하면 macOS의 TCC(개인정보 보호) 정책 때문에 `EPERM`으로 막혔었다. `~/Desktop`, `~/Documents`,
+`~/Downloads`는 macOS가 특별히 보호하는 폴더라 그 안의 내용을 읽으려는 프로세스는 권한을 받아야 한다.
 
-실제로 러너를 상시 구동시키기 전에, **`System Settings → Privacy & Security → Full Disk Access`에서
-러너를 실행할 앱(터미널 앱, 또는 `node` 바이너리)에 권한을 켜줘야 한다.** 이걸 안 하면 `list_projects`뿐
-아니라 3단계의 git worktree 생성·빌드 실행도 같은 벽에 부딪힐 가능성이 높다.
+**`System Settings → Privacy & Security → Full Disk Access`에서 터미널 앱에 권한을 켜주면 해결된다**
+(실제로 확인함 — 권한을 켜기 전엔 `list_projects`와 `claude` 실행이 모두 EPERM으로 막혔고, 켠 뒤에는
+둘 다 정상 동작했다). 러너를 상시 구동시키기 전에 반드시 해줘야 한다.
+
+### 3단계 검증 중 발견해 고친 버그 2가지
+
+- **`job_meta` 이벤트 처리 버그**: 러너가 보낸 이벤트 객체를 그대로 구조 분해하면서 `type` 필드가
+  Prisma `update()` 데이터에 섞여 들어가 매번 조용히 실패하고 있었다 (`worktreePath`/`sessionId`가
+  DB에 저장되지 않음). 서버 로그에서 `PrismaClientValidationError`를 보고 발견 → 필요한 필드만 명시적으로
+  뽑아 고쳤다.
+- **티켓 상태 전이 경쟁 조건**: 러너가 재연결되면 `recoverAndAssign`이 오래된 티켓을 다시 배정하는 동시에,
+  직원 드라이버가 자기 상태를 보고하는 이벤트가 겹치면 "invalid ticket transition" 에러가 나며 상태 변경이
+  씹히는 걸 발견했다 (같은 티켓을 두 경로가 동시에 건드림). 티켓 단위 락(`withTicketLock`)으로 같은
+  티켓에 대한 모든 상태 변경을 순서대로 처리하도록 고쳤고, 배정 처리는 이미 assigned 상태면 조용히
+  넘어가는 멱등 함수(`ensureAssigned`)로 분리했다.
 
 ## 로컬 실행
 

@@ -13,7 +13,8 @@ export type UiToServerEvent =
 export type RunnerToServerEvent =
   | { type: "job_log"; ticketId: string; line: string; ts: string }
   | { type: "job_status"; ticketId: string; status: Ticket["status"] }
-  | { type: "job_heartbeat"; ticketId: string; ts: string };
+  | { type: "job_heartbeat"; ticketId: string; ts: string }
+  | { type: "job_meta"; ticketId: string; worktreePath?: string; sessionId?: string };
 
 export type ServerToRunnerEvent =
   | { type: "job_assign"; ticket: Ticket }
