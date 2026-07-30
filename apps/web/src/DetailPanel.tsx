@@ -107,7 +107,7 @@ export function DetailPanel() {
           <p className="text-xs text-slate-400">{manager?.driver ?? "claude"}</p>
         </div>
         <p className="text-sm text-slate-400">
-          팀장과의 대화는 아래 채팅창에서 확인하세요. 팀장은 직접 코드를 수정하지 않고, 티켓을 만들어
+          팀장과의 대화는 왼쪽 채팅창에서 확인하세요. 팀장은 직접 코드를 수정하지 않고, 티켓을 만들어
           직원에게 위임합니다.
         </p>
       </div>
