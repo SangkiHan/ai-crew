@@ -4,4 +4,5 @@ build/
 .env
 *.log
 .DS_Store
+*.tsbuildinfo
 apps/server/prisma/dev.db
