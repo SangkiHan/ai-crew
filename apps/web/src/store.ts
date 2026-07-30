@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AgentConfig, Employee, ServerToUiEvent, Team, Ticket } from "@ai-crew/shared";
+import type { AgentConfig, Employee, PlanningDoc, ServerToUiEvent, Team, Ticket } from "@ai-crew/shared";
 import { sendChatMessage } from "./lib/api.js";
 
 export interface LogLine {
@@ -25,6 +25,7 @@ interface StoreState {
   // 팀마다 팀장 대화(세션)와 바쁨 상태가 분리된다 - teamId로 구분해서 들고 있는다.
   managerStatusByTeam: Record<string, "idle" | "busy">;
   chatMessagesByTeam: Record<string, ChatMessage[]>;
+  planningDocsByTeam: Record<string, PlanningDoc[]>;
   selectedNodeId: string | null;
 
   setAgents: (agents: AgentConfig[]) => void;
@@ -32,8 +33,9 @@ interface StoreState {
   setSelectedTeamId: (id: string | null) => void;
   setEmployees: (employees: Employee[]) => void;
   setTickets: (tickets: Ticket[]) => void;
+  setPlanningDocs: (teamId: string, docs: PlanningDoc[]) => void;
   setSelectedNode: (id: string | null) => void;
-  sendUserMessage: (teamId: string, text: string) => Promise<void>;
+  sendUserMessage: (teamId: string, text: string, mode?: "chat" | "planning") => Promise<void>;
   handleServerEvent: (event: ServerToUiEvent) => void;
 
   employeesForTeam: (teamId: string) => Employee[];
@@ -52,6 +54,7 @@ export const useStore = create<StoreState>((set, get) => ({
   logsByTicket: {},
   managerStatusByTeam: {},
   chatMessagesByTeam: {},
+  planningDocsByTeam: {},
   selectedNodeId: "manager",
 
   setAgents: (agents) => set({ agents }),
@@ -62,16 +65,23 @@ export const useStore = create<StoreState>((set, get) => ({
   setTickets: (tickets) =>
     set({ tickets: Object.fromEntries(tickets.map((t) => [t.id, t])) }),
 
+  setPlanningDocs: (teamId, docs) =>
+    set((s) => ({ planningDocsByTeam: { ...s.planningDocsByTeam, [teamId]: docs } })),
+
   setSelectedNode: (id) => set({ selectedNodeId: id }),
 
-  sendUserMessage: async (teamId, text) => {
-    const userMsg: ChatMessage = { id: crypto.randomUUID(), role: "user", text };
+  sendUserMessage: async (teamId, text, mode) => {
+    const userMsg: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: "user",
+      text: mode === "planning" ? `[기획] ${text}` : text,
+    };
     set((s) => ({
       chatMessagesByTeam: { ...s.chatMessagesByTeam, [teamId]: [...(s.chatMessagesByTeam[teamId] ?? []), userMsg] },
     }));
 
     try {
-      const { requestId } = await sendChatMessage(teamId, text);
+      const { requestId } = await sendChatMessage(teamId, text, mode);
       const managerMsg: ChatMessage = {
         id: crypto.randomUUID(),
         role: "manager",
@@ -131,6 +141,13 @@ export const useStore = create<StoreState>((set, get) => ({
           ),
         },
       }));
+    } else if (event.type === "planning_doc_updated") {
+      set((s) => {
+        const list = s.planningDocsByTeam[event.doc.teamId] ?? [];
+        const idx = list.findIndex((d) => d.id === event.doc.id);
+        const next = idx >= 0 ? list.map((d) => (d.id === event.doc.id ? event.doc : d)) : [...list, event.doc];
+        return { planningDocsByTeam: { ...s.planningDocsByTeam, [event.doc.teamId]: next } };
+      });
     }
   },
 
@@ -140,7 +157,7 @@ export const useStore = create<StoreState>((set, get) => ({
 
   statusForRole: (role) => {
     const tickets = get().ticketsForRole(role);
-    if (tickets.some((t) => t.status === "running")) return "busy";
+    if (tickets.some((t) => t.status === "running" || t.status === "qa_review")) return "busy";
     if (tickets.some((t) => t.status === "blocked" || t.status === "needs_approval")) return "attention";
     if (tickets.some((t) => t.status === "queued" || t.status === "assigned")) return "waiting";
     return "idle";

@@ -40,6 +40,8 @@ function toTicket(row: {
   createdAt: Date;
   updatedAt: Date;
   lastHeartbeatAt: Date | null;
+  qaCycles: number;
+  qaNote: string | null;
 }): Ticket {
   return {
     id: row.id,
@@ -56,6 +58,8 @@ function toTicket(row: {
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     lastHeartbeatAt: row.lastHeartbeatAt ? row.lastHeartbeatAt.toISOString() : null,
+    qaCycles: row.qaCycles,
+    qaNote: row.qaNote,
   };
 }
 
@@ -100,6 +104,17 @@ export async function findOrphaned(): Promise<Ticket[]> {
   return rows.map(toTicket);
 }
 
+// 이 티켓이 다른(blocked) 티켓을 풀어주려고 팀장이 만든 것이었다면, done이 되는 순간
+// 원래 막혀있던 티켓을 자동으로 재개시킨다 (blocked -> queued -> 러너가 다시 집어간다).
+// done으로 가는 경로가 두 곳(사람 승인, QA 자동완료)이라 공통으로 뺐다.
+async function resumeParentIfBlocked(ticket: Ticket): Promise<void> {
+  if (!ticket.parentTicketId) return;
+  const parent = await getTicket(ticket.parentTicketId);
+  if (parent?.status === "blocked") {
+    await transitionTicket(parent.id, "queued");
+  }
+}
+
 export async function transitionTicket(id: string, to: TicketStatus): Promise<Ticket> {
   const ticket = await withTicketLock(id, async () => {
     const current = await prisma.ticket.findUniqueOrThrow({ where: { id } });
@@ -113,14 +128,7 @@ export async function transitionTicket(id: string, to: TicketStatus): Promise<Ti
     return t;
   });
 
-  // 이 티켓이 다른(blocked) 티켓을 풀어주려고 팀장이 만든 것이었다면, done이 되는 순간
-  // 원래 막혀있던 티켓을 자동으로 재개시킨다 (blocked -> queued -> 러너가 다시 집어간다).
-  if (to === "done" && ticket.parentTicketId) {
-    const parent = await getTicket(ticket.parentTicketId);
-    if (parent?.status === "blocked") {
-      await transitionTicket(parent.id, "queued");
-    }
-  }
+  if (to === "done") await resumeParentIfBlocked(ticket);
 
   return ticket;
 }
@@ -136,6 +144,45 @@ export async function ensureAssigned(id: string): Promise<Ticket> {
     ticketEvents.emit("changed", ticket);
     return ticket;
   });
+}
+
+// QA 직원의 report_qa_result 판정을 반영한다. 통과면 사람 승인 없이 바로 완료 처리한다
+// (기획서 단계에서 이미 사람이 승인했다는 전제 - 매 티켓마다 다시 승인받을 필요는 없다는
+// 사용자 결정. QA가 없는 팀은 지금처럼 review에서 사람이 직접 승인해야 한다).
+// 반려면 원래 담당 직원에게 돌려보내되(running) 3회 넘게 반려되면 사람에게 escalate한다
+// (needs_approval - 사람이 승인하면 원래 담당자가 다시 시도, 거부하면 실패 처리).
+export async function applyQaVerdict(
+  id: string,
+  pass: boolean,
+  note: string
+): Promise<{ ticket: Ticket; escalated: boolean }> {
+  const result = await withTicketLock(id, async () => {
+    const current = await prisma.ticket.findUniqueOrThrow({ where: { id } });
+    if (current.status !== "qa_review") {
+      throw new Error(`ticket ${id}는 qa_review 상태가 아닙니다 (현재: ${current.status})`);
+    }
+    if (pass) {
+      const row = await prisma.ticket.update({ where: { id }, data: { status: "done", qaNote: null } });
+      const t = toTicket(row);
+      ticketEvents.emit("changed", t);
+      return { ticket: t, escalated: false };
+    }
+    const cycles = current.qaCycles + 1;
+    const nextStatus = cycles >= 3 ? "needs_approval" : "running";
+    const row = await prisma.ticket.update({
+      where: { id },
+      data: { status: nextStatus, qaCycles: cycles, qaNote: note },
+    });
+    const t = toTicket(row);
+    ticketEvents.emit("changed", t);
+    return { ticket: t, escalated: nextStatus === "needs_approval" };
+  });
+
+  // transitionTicket("done")과 마찬가지로, 이 티켓이 blocked 티켓을 풀어주려던 것이었다면
+  // 원래 티켓을 재개시킨다 - QA가 자동으로 done 처리하는 경로에서도 빠지면 안 된다.
+  if (pass) await resumeParentIfBlocked(result.ticket);
+
+  return result;
 }
 
 export async function recordHeartbeat(id: string): Promise<void> {

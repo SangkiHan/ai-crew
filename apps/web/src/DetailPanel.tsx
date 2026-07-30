@@ -7,6 +7,7 @@ const STATUS_LABEL: Record<TicketStatus, string> = {
   queued: "대기",
   assigned: "배정됨",
   running: "작업중",
+  qa_review: "QA 검증중",
   review: "검수 대기",
   blocked: "막힘",
   needs_approval: "승인 대기",

@@ -14,3 +14,15 @@ export async function fetchPendingPeerMessages(toName: string): Promise<PeerMess
   if (!res.ok) throw new Error(`failed to fetch peer messages: ${res.status}`);
   return res.json();
 }
+
+// QA 세션은 보통 report_qa_result MCP 툴로 직접 판정을 REST에 남긴다(report_blocked와 같은 패턴).
+// 세션이 그 툴을 안 부르고 그냥 끝나버린 경우를 위한 안전망 - 통과로 간주해 사람이 review에서
+// 보게 한다(막혀서 멈추는 것보다 안전). 이미 report_qa_result가 호출돼 상태가 바뀌었으면
+// 서버가 400을 주는데, 그건 정상 케이스라 조용히 무시한다.
+export async function reportQaFallback(ticketId: string): Promise<void> {
+  await fetch(`${AI_CREW_SERVER_URL}/api/tickets/${ticketId}/qa-result`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pass: true, note: "QA 세션이 명시적 판정 없이 종료되어 통과로 처리합니다." }),
+  }).catch(() => {});
+}

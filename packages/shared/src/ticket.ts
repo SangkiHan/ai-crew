@@ -2,6 +2,7 @@ export type TicketStatus =
   | "queued"
   | "assigned"
   | "running"
+  | "qa_review"
   | "review"
   | "blocked"
   | "needs_approval"
@@ -24,12 +25,21 @@ export interface Ticket {
   createdAt: string;
   updatedAt: string;
   lastHeartbeatAt: string | null;
+  // QA 직원이 이 티켓을 몇 번 반려했는지. 3회 넘으면 needs_approval로 escalate한다.
+  qaCycles: number;
+  // QA가 남긴 가장 최근 반려 사유.
+  qaNote: string | null;
 }
 
 export const TICKET_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
   queued: ["assigned", "failed"],
   assigned: ["running", "failed"],
-  running: ["review", "blocked", "needs_approval", "failed"],
+  // running 완료 후: 팀에 QA 직원이 있으면 qa_review로, 없으면 바로 review로 (서버가 결정).
+  running: ["qa_review", "review", "blocked", "needs_approval", "failed"],
+  // qa_review: QA 통과 -> done(사람 승인 없이 바로 완료+머지 - 기획서 승인이 이미 사람의 확인
+  // 지점이라는 전제), 반려(3회 미만) -> running(원래 담당자 재작업), 반려(3회 이상) ->
+  // needs_approval(사람에게 계속할지 묻기).
+  qa_review: ["done", "running", "needs_approval", "failed"],
   review: ["done", "failed", "running"],
   blocked: ["queued", "failed"],
   needs_approval: ["running", "failed"],

@@ -1,12 +1,13 @@
 import spawn from "cross-spawn";
 import WebSocket from "ws";
-import type { DriverStatus, RunnerToServerEvent, ServerToRunnerEvent, Ticket } from "@ai-crew/shared";
+import { isQaEmployee, type DriverStatus, type RunnerToServerEvent, type ServerToRunnerEvent, type Ticket } from "@ai-crew/shared";
 import { fetchEmployees } from "./employees/api.js";
-import { runClaudeDriver } from "./drivers/claude.js";
+import { runClaudeDriver, runClaudeQaReview } from "./drivers/claude.js";
 import { runGeminiDriver } from "./drivers/gemini.js";
 import { runCodexDriver } from "./drivers/codex.js";
 import { runMock } from "./drivers/mock.js";
 import { invokeManager } from "./manager/invoke.js";
+import { runPlanningDoc } from "./planning/dispatch.js";
 import { deleteBranch, mergeBranch, removeWorktree } from "./worktree.js";
 import { projectPath } from "./workspace.js";
 
@@ -28,6 +29,23 @@ function send(event: RunnerToServerEvent) {
 // 러너 재시작이 필요 없다. ticket.role은 직원의 name과 같다.
 async function runJob(ticket: Ticket): Promise<void> {
   const employees = await fetchEmployees();
+
+  // qa_review 상태는 ticket.role(원래 개발 담당자)이 아니라 그 팀의 QA 직원에게 보내야 한다 -
+  // 서버가 이미 QA 직원 존재를 확인하고 이 상태로 보냈으므로 여기선 찾기만 하면 된다.
+  if (ticket.status === "qa_review") {
+    const qaEmployee = employees.find((e) => e.teamId === ticket.teamId && isQaEmployee(e.taskDescription));
+    if (!qaEmployee) {
+      console.log(`[runner] qa_review 티켓 ${ticket.id}에 맞는 QA 직원을 못 찾아 mock으로 대체합니다`);
+      return runMock(ticket, send);
+    }
+    if (qaEmployee.driver !== "claude") {
+      console.log(`[runner] QA 직원 드라이버(${qaEmployee.driver})는 아직 지원하지 않아 통과 처리합니다`);
+      const { reportQaFallback } = await import("./employees/api.js");
+      return reportQaFallback(ticket.id);
+    }
+    return runClaudeQaReview(ticket, qaEmployee, send);
+  }
+
   const employee = employees.find((e) => e.name === ticket.role);
 
   if (!employee) {
@@ -46,6 +64,27 @@ async function runJob(ticket: Ticket): Promise<void> {
       console.log(`[runner] "${employee.driver}" 드라이버는 아직 없어 mock으로 대체합니다`);
       return runMock(ticket, send);
   }
+}
+
+// 팀장이 create_planning_doc으로 위임하면 서버가 보낸다. 티켓 큐와는 별개 경로다.
+async function handlePlanningDocAssign(event: {
+  planningDocId: string;
+  teamId: string;
+  employeeName: string;
+  request: string;
+}) {
+  const employees = await fetchEmployees();
+  const employee = employees.find((e) => e.name === event.employeeName);
+  if (!employee) {
+    send({
+      type: "planning_doc_result",
+      planningDocId: event.planningDocId,
+      success: false,
+      content: `"${event.employeeName}" 직원을 찾을 수 없습니다.`,
+    });
+    return;
+  }
+  return runPlanningDoc(event.planningDocId, employee, event.request, send);
 }
 
 // 브라우저 채팅바 -> 서버 -> 여기로 온다. 티켓 큐와는 별개 경로 (동시 실행 수 제한에 안 걸림).
@@ -174,6 +213,8 @@ function connect() {
       handleMergeTicket(event);
     } else if (event.type === "check_driver_status") {
       handleCheckDriverStatus(event.requestId);
+    } else if (event.type === "planning_doc_assign") {
+      handlePlanningDocAssign(event);
     }
   });
 

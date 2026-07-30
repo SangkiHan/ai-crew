@@ -2,7 +2,15 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { askUser, createTicket, getTicket, listEmployees, listProjects, listTickets } from "./tools.js";
+import {
+  askUser,
+  createPlanningDoc,
+  createTicket,
+  getTicket,
+  listEmployees,
+  listProjects,
+  listTickets,
+} from "./tools.js";
 
 // 팀장(Claude Code headless)에게 붙는 MCP 서버. 러너가 `claude -p ... --mcp-config`로
 // 이 프로세스를 호스트에서 띄운다. 실제 상태는 여기서 들고 있지 않고, 항상 서버의
@@ -81,13 +89,39 @@ server.tool(
   "우리 팀의 티켓 보드 상태를 조회합니다. status로 필터링할 수 있습니다.",
   {
     status: z
-      .enum(["queued", "assigned", "running", "review", "blocked", "needs_approval", "done", "failed"])
+      .enum([
+        "queued",
+        "assigned",
+        "running",
+        "qa_review",
+        "review",
+        "blocked",
+        "needs_approval",
+        "done",
+        "failed",
+      ])
       .optional()
       .describe("이 상태의 티켓만 조회 (생략하면 전체)"),
   },
   async ({ status }) => {
     const tickets = await listTickets(TEAM_ID!, status);
     return { content: [{ type: "text" as const, text: JSON.stringify(tickets, null, 2) }] };
+  }
+);
+
+server.tool(
+  "create_planning_doc",
+  "사용자가 채팅에서 '기획' 모드로 요청했을 때만 사용합니다. 코드 티켓이 아니라 서비스 기획서를 " +
+    "만듭니다 - list_employees에서 서비스 기획을 담당하는 직원을 찾아 위임하세요 (당신이 직접 " +
+    "기획서를 쓰지 마세요). 기획서가 완성되면 사용자가 검토 후 승인/거부하며, 승인되면 그 내용을 " +
+    "바탕으로 당신에게 다시 개발 티켓 발행을 요청하는 메시지가 옵니다.",
+  {
+    employeeName: z.string().describe("기획을 맡을 직원의 이름 (list_employees 결과 중 하나)"),
+    request: z.string().describe("사용자의 원래 기획 요청 내용 그대로"),
+  },
+  async ({ employeeName, request }) => {
+    const doc = await createPlanningDoc(TEAM_ID!, employeeName, request);
+    return { content: [{ type: "text" as const, text: JSON.stringify(doc, null, 2) }] };
   }
 );
 

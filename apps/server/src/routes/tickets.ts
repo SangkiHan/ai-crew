@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { ticketBranchName } from "@ai-crew/shared";
-import { createTicket, getTicket, listTickets, transitionTicket } from "../tickets/store.js";
+import { applyQaVerdict, createTicket, getTicket, listTickets, transitionTicket } from "../tickets/store.js";
 import { getEmployeeByName } from "../employees/store.js";
-import { requestManagerInvocation, requestMerge } from "../ws/runner.js";
+import { pushToAnyRunner, requestManagerInvocation, requestMerge } from "../ws/runner.js";
 import { broadcastToUi } from "../ws/ui.js";
 
 interface CreateTicketBody {
@@ -57,6 +57,10 @@ export function registerTicketRoutes(app: FastifyInstance) {
     // 다른 티켓(예: blocked였다가 재개된 티켓)이 이 작업의 결과를 볼 수 있다.
     if (wasReview && updated.worktreePath) {
       requestMerge(updated.id, updated.project, ticketBranchName(updated.id), updated.worktreePath);
+    } else if (!wasReview) {
+      // needs_approval -> running: "queued"가 아니라서 store의 changed 리스너가 자동으로
+      // 러너에 밀어주지 않는다 - 여기서 직접 밀어줘야 실제로 다시 실행된다.
+      await pushToAnyRunner(updated.id);
     }
     return updated;
   });
@@ -69,6 +73,38 @@ export function registerTicketRoutes(app: FastifyInstance) {
     }
     return transitionTicket(ticket.id, "failed");
   });
+
+  // QA 직원의 report_qa_result MCP 툴이 호출하는 경로. 판정(통과/반려)에 따른 다음 상태 전이와
+  // 재발행/escalation은 전부 tickets/store.ts의 applyQaVerdict가 결정한다.
+  app.post<{ Params: { id: string }; Body: { pass: boolean; note?: string } }>(
+    "/api/tickets/:id/qa-result",
+    async (req, reply) => {
+      const existing = await getTicket(req.params.id);
+      if (!existing) return reply.code(404).send({ error: "not found" });
+      if (existing.status !== "qa_review") {
+        return reply.code(400).send({ error: `ticket is not in qa_review (current: ${existing.status})` });
+      }
+      const { pass, note } = req.body;
+      const { ticket, escalated } = await applyQaVerdict(req.params.id, pass, note ?? "");
+      broadcastToUi({
+        type: "log_line",
+        ticketId: ticket.id,
+        line: pass
+          ? "[QA] 통과 - 사람 승인 없이 바로 완료 처리합니다."
+          : escalated
+            ? `[QA] ${ticket.qaCycles}회 연속 반려됨 - 사람 확인이 필요합니다: ${note ?? ""}`
+            : `[QA] 반려 (${ticket.qaCycles}/3) - 담당 직원에게 다시 보냅니다: ${note ?? ""}`,
+        ts: new Date().toISOString(),
+      });
+      if (pass && ticket.worktreePath) {
+        // QA 통과 = done이므로, 승인 때와 마찬가지로 실제 워크트리 브랜치를 메인에 머지해야 한다.
+        requestMerge(ticket.id, ticket.project, ticketBranchName(ticket.id), ticket.worktreePath);
+      } else if (!pass && !escalated) {
+        await pushToAnyRunner(ticket.id);
+      }
+      return ticket;
+    }
+  );
 
   // 직원이 report_blocked MCP 툴로 호출하는 경로. blocked로 전이하고, 사유를 로그로 남기고,
   // 팀장을 자동으로 깨워서 조치하게 한다 (팀장이 이미 바쁘면 사람이 UI에서 보고 직접 채팅해야 함).
