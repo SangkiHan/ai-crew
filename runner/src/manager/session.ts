@@ -1,8 +1,9 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 const SESSION_FILE =
-  process.env.MANAGER_SESSION_FILE ?? join(process.env.HOME ?? ".", ".ai-crew", "manager-session.json");
+  process.env.MANAGER_SESSION_FILE ?? join(homedir(), ".ai-crew", "manager-session.json");
 
 export async function readSessionId(): Promise<string | null> {
   try {

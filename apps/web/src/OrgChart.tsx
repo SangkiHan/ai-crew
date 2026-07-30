@@ -22,7 +22,7 @@ const DRIVER_LABEL: Record<string, string> = {
 };
 
 // fitView prop은 최초 마운트 때 한 번만 적용된다. 매니저 노드만 있는 상태로 마운트된 뒤
-// agents가 비동기로 로드되어 직원 노드가 추가되면, 다시 fitView를 불러줘야 새 노드가 화면에 들어온다.
+// employees가 비동기로 로드되어 직원 노드가 추가되면, 다시 fitView를 불러줘야 새 노드가 화면에 들어온다.
 function FitViewOnNodesChange({ nodeCount }: { nodeCount: number }) {
   const { fitView } = useReactFlow();
   useEffect(() => {
@@ -34,6 +34,7 @@ function FitViewOnNodesChange({ nodeCount }: { nodeCount: number }) {
 
 export function OrgChart() {
   const agents = useStore((s) => s.agents);
+  const employees = useStore((s) => s.employees);
   const managerStatus = useStore((s) => s.managerStatus);
   // statusForRole 자체는 store 안에서 안정적인 함수 참조라 이걸 구독해서는 tickets가
   // 바뀌어도 리렌더링되지 않는다. tickets 객체를 직접 구독해 리렌더링을 트리거하고,
@@ -42,7 +43,6 @@ export function OrgChart() {
   const setSelectedNode = useStore((s) => s.setSelectedNode);
 
   const manager = agents.find((a) => a.id === "manager");
-  const employees = agents.filter((a) => a.id !== "manager");
 
   const { nodes, edges } = useMemo(() => {
     const statusForRole = useStore.getState().statusForRole;
@@ -65,29 +65,30 @@ export function OrgChart() {
     const spacing = 220;
     const startX = 260 - ((employees.length - 1) * spacing) / 2;
 
-    employees.forEach((agent, i) => {
+    // 티켓의 role은 직원의 id가 아니라 name과 같다 (Employee.name이 그대로 role 값).
+    employees.forEach((employee, i) => {
       nodes.push({
-        id: agent.id,
+        id: employee.id,
         type: "agent",
         position: { x: startX + i * spacing, y: 200 },
         data: {
-          label: agent.name,
-          subtitle: `${DRIVER_LABEL[agent.driver] ?? agent.driver} · ${agent.projects.length}개 프로젝트`,
-          status: statusForRole(agent.id),
+          label: employee.name,
+          subtitle: `${DRIVER_LABEL[employee.driver] ?? employee.driver}${employee.model ? ` · ${employee.model}` : ""}`,
+          status: statusForRole(employee.name),
         },
         draggable: false,
       });
       edges.push({
-        id: `manager-${agent.id}`,
+        id: `manager-${employee.id}`,
         source: "manager",
-        target: agent.id,
-        animated: statusForRole(agent.id) === "busy",
+        target: employee.id,
+        animated: statusForRole(employee.name) === "busy",
       });
     });
 
     return { nodes, edges };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agents, managerStatus, tickets]);
+  }, [agents, employees, managerStatus, tickets]);
 
   return (
     <div className="h-full w-full">

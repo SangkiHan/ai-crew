@@ -2,7 +2,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { askUser, createTicket, getTicket, listProjects, listTickets } from "./tools.js";
+import { askUser, createTicket, getTicket, listEmployees, listProjects, listTickets } from "./tools.js";
 
 // 팀장(Claude Code headless)에게 붙는 MCP 서버. 러너가 `claude -p ... --mcp-config`로
 // 이 프로세스를 호스트에서 띄운다. 실제 상태는 여기서 들고 있지 않고, 항상 서버의
@@ -21,11 +21,27 @@ server.tool(
 );
 
 server.tool(
+  "list_employees",
+  "현재 등록된 직원 목록을 담당 업무 설명과 함께 반환합니다. 티켓을 만들기 전에 " +
+    "이걸로 어떤 직원(role)에게 맡길지 확인하세요.",
+  {},
+  async () => {
+    const employees = await listEmployees();
+    return { content: [{ type: "text" as const, text: JSON.stringify(employees, null, 2) }] };
+  }
+);
+
+server.tool(
   "create_ticket",
   "직원에게 작업을 위임하는 티켓을 생성합니다. 비동기이며 즉시 반환됩니다.",
   {
-    role: z.string().describe("담당 직원 역할 (예: backend, frontend)"),
-    project: z.string().describe("대상 프로젝트 이름 (list_projects 결과 중 하나)"),
+    role: z.string().describe("담당 직원의 이름/id (list_employees 결과 중 하나)"),
+    project: z
+      .string()
+      .describe(
+        "대상 프로젝트 이름(list_projects 결과 중 하나) 또는 임의의 절대경로. " +
+          "WORKSPACE_ROOT 밖의 프로젝트라도 사용자가 절대경로를 알려주면 그대로 써도 됩니다."
+      ),
     title: z.string().describe("티켓 제목"),
     spec: z.string().describe("직원에게 전달할 구체적인 작업 지시"),
     parentTicketId: z

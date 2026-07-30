@@ -67,16 +67,20 @@ function ApprovalActions({ ticket }: { ticket: Ticket }) {
 export function DetailPanel() {
   const selectedNodeId = useStore((s) => s.selectedNodeId);
   const agents = useStore((s) => s.agents);
+  const employees = useStore((s) => s.employees);
   // ticketsForRole은 store 안에서 안정적인 함수 참조라 이걸 구독하면 tickets가 바뀌어도
   // 리렌더링되지 않는다. tickets 객체를 직접 구독해 리렌더링을 트리거한다.
   const allTickets = useStore((s) => s.tickets);
   const logsByTicket = useStore((s) => s.logsByTicket);
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
 
-  const agent = agents.find((a) => a.id === selectedNodeId);
-  const tickets = selectedNodeId
-    ? Object.values(allTickets).filter((t) => t.role === selectedNodeId)
-    : [];
+  const isManager = selectedNodeId === "manager";
+  const manager = agents.find((a) => a.id === "manager");
+  const employee = employees.find((e) => e.id === selectedNodeId);
+
+  // 티켓의 role은 직원의 id가 아니라 name과 같다.
+  const roleKey = employee?.name;
+  const tickets = roleKey ? Object.values(allTickets).filter((t) => t.role === roleKey) : [];
   const sortedTickets = [...tickets].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
   useEffect(() => {
@@ -87,7 +91,7 @@ export function DetailPanel() {
   const selectedTicket = sortedTickets.find((t) => t.id === selectedTicketId) ?? null;
   const logs = selectedTicketId ? logsByTicket[selectedTicketId] ?? [] : [];
 
-  if (!selectedNodeId || !agent) {
+  if (!selectedNodeId || (!isManager && !employee)) {
     return (
       <div className="flex h-full items-center justify-center p-4 text-sm text-slate-500">
         조직도에서 노드를 클릭하면 상세 정보가 여기 표시됩니다.
@@ -95,55 +99,63 @@ export function DetailPanel() {
     );
   }
 
-  return (
-    <div className="flex h-full flex-col gap-3 overflow-hidden p-4">
-      <div>
-        <h2 className="text-lg font-semibold text-slate-100">{agent.name}</h2>
-        <p className="text-xs text-slate-400">
-          {agent.driver} · {agent.projects.length ? agent.projects.join(", ") : "담당 프로젝트 없음"}
-        </p>
-      </div>
-
-      {agent.id === "manager" ? (
+  if (isManager) {
+    return (
+      <div className="flex h-full flex-col gap-3 overflow-hidden p-4">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-100">{manager?.name ?? "팀장"}</h2>
+          <p className="text-xs text-slate-400">{manager?.driver ?? "claude"}</p>
+        </div>
         <p className="text-sm text-slate-400">
           팀장과의 대화는 아래 채팅창에서 확인하세요. 팀장은 직접 코드를 수정하지 않고, 티켓을 만들어
           직원에게 위임합니다.
         </p>
-      ) : (
-        <>
-          <div className="flex flex-col gap-1.5 overflow-y-auto">
-            {sortedTickets.length === 0 ? (
-              <p className="text-sm text-slate-500">아직 이 직원에게 배정된 티켓이 없습니다.</p>
-            ) : (
-              sortedTickets.map((t) => (
-                <TicketRow
-                  key={t.id}
-                  ticket={t}
-                  active={t.id === selectedTicketId}
-                  onClick={() => setSelectedTicketId(t.id)}
-                />
-              ))
-            )}
-          </div>
+      </div>
+    );
+  }
 
-          {selectedTicket && (selectedTicket.status === "review" || selectedTicket.status === "needs_approval") && (
-            <ApprovalActions ticket={selectedTicket} />
-          )}
+  return (
+    <div className="flex h-full flex-col gap-3 overflow-hidden p-4">
+      <div>
+        <h2 className="text-lg font-semibold text-slate-100">{employee!.name}</h2>
+        <p className="text-xs text-slate-400">
+          {employee!.driver}
+          {employee!.model ? ` · ${employee!.model}` : ""}
+        </p>
+        <p className="mt-1 text-xs text-slate-500">{employee!.taskDescription}</p>
+      </div>
 
-          {selectedTicket && (
-            <div className="flex-1 overflow-y-auto rounded-lg border border-slate-800 bg-black/40 p-2 font-mono text-xs text-slate-300">
-              {logs.length === 0 ? (
-                <p className="text-slate-600">아직 로그가 없습니다.</p>
-              ) : (
-                logs.map((l, i) => (
-                  <div key={i} className="whitespace-pre-wrap py-0.5">
-                    {l.line}
-                  </div>
-                ))
-              )}
-            </div>
+      <div className="flex flex-col gap-1.5 overflow-y-auto">
+        {sortedTickets.length === 0 ? (
+          <p className="text-sm text-slate-500">아직 이 직원에게 배정된 티켓이 없습니다.</p>
+        ) : (
+          sortedTickets.map((t) => (
+            <TicketRow
+              key={t.id}
+              ticket={t}
+              active={t.id === selectedTicketId}
+              onClick={() => setSelectedTicketId(t.id)}
+            />
+          ))
+        )}
+      </div>
+
+      {selectedTicket && (selectedTicket.status === "review" || selectedTicket.status === "needs_approval") && (
+        <ApprovalActions ticket={selectedTicket} />
+      )}
+
+      {selectedTicket && (
+        <div className="flex-1 overflow-y-auto rounded-lg border border-slate-800 bg-black/40 p-2 font-mono text-xs text-slate-300">
+          {logs.length === 0 ? (
+            <p className="text-slate-600">아직 로그가 없습니다.</p>
+          ) : (
+            logs.map((l, i) => (
+              <div key={i} className="whitespace-pre-wrap py-0.5">
+                {l.line}
+              </div>
+            ))
           )}
-        </>
+        </div>
       )}
     </div>
   );

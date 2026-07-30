@@ -5,37 +5,98 @@
 
 자세한 배경과 단계별 계획은 [`docs/PLAN.md`](./docs/PLAN.md) 참고.
 
+## 빠른 시작 (git clone 직후)
+
+```bash
+git clone https://github.com/SangkiHan/ai-crew.git
+cd ai-crew
+pnpm install
+node scripts/setup.mjs        # 처음 한 번: AI 직원들이 작업할 프로젝트 폴더 경로를 물어보고 .env 생성
+docker compose -f infra/docker-compose.yml up -d --build
+DATABASE_URL="postgresql://aicrew:aicrew@localhost:5432/aicrew" \
+  pnpm --filter @ai-crew/server exec prisma db push   # 최초 1회, DB 테이블 생성
+
+# 별도 터미널에서 (호스트에서 직접 실행 - JDK/Gradle/git worktree/claude·gemini·codex CLI를 그대로 써야 함)
+pnpm --filter @ai-crew/runner dev
+```
+
+브라우저에서 `http://localhost` 접속 → 우측 상단 **"직원 관리"** 로 직원을 추가하고, 하단 채팅창에
+팀장에게 할 일을 말하면 된다.
+
+**절대경로를 직접 입력해야 하는 곳은 딱 하나, `.env`의 `WORKSPACE_ROOT`뿐이다** (`node scripts/setup.mjs`가
+물어봐서 자동으로 채워준다. 나중에 바꾸고 싶으면 `.env` 파일을 직접 열어 수정). 그 외 포트/DB 접속 정보는
+`infra/docker-compose.yml`에 이미 다 들어있어 손댈 필요가 없다.
+
+**DB는 docker volume에 저장되므로 `docker compose down`으로 컨테이너를 내려도 데이터가 유지된다**
+(`infra_aicrew-postgres` 볼륨). `docker compose down -v`처럼 `-v`를 주면 볼륨까지 지워지니 주의.
+
+**맥/윈도우 어디서나 동작한다** — 절대경로 계산에 `os.homedir()`/`path.join`만 쓰고 셸을 거치지 않는
+`execFile`/`spawn`만 쓴다. 다만 `claude`/`gemini`/`codex` CLI와 JDK/Node/Go 등 실제 툴체인은 그 운영체제에
+설치돼 있어야 한다 (아래 "AI 모델(CLI) 설치 확인" 참고).
+
 ## AI 팀 구성
 
 실제 회사 조직처럼 **팀장 1명 + 직원 여러 명**으로 구성된다. 팀장과 직원 모두 각자의 CLI 세션으로
-동작하며(API 과금 없이 구독 요금제로 돈다), 마크다운 파일 하나로 정의된다.
+동작하며(API 과금 없이 구독 요금제로 돈다), 웹 UI에서 관리한다.
 
 ### 팀장
 
-- **누가**: Claude Code (Claude Max 구독)
-- **무엇을 하나**: 사용자 요청을 작업 단위로 쪼개고, 어떤 직원에게 맡길지 정하고, 끝난 작업의 diff를
-  검수한다. **팀장은 직접 코드를 만지지 않는다** — 오직 분해·위임·검수만 한다.
-- **어떻게 지시하나**: `list_projects`, `create_ticket`, `get_ticket`, `list_tickets`, `ask_user` 라는
-  5개의 MCP 툴로 직원에게 일을 맡기고 진행 상황을 확인한다 (`agents/manager.md`에 행동 규칙이 적혀 있음).
+- **누가**: Claude Code (Claude Max 구독), `agents/manager.md` 파일 하나로 고정. 팀장은 유일하고
+  이름으로 여러 명 둘 수 없다.
+- **무엇을 하나**: 사용자 요청을 작업 단위로 쪼개고, 어떤 직원에게 맡길지 정하고, 끝난 작업의 상태를
+  확인한다. **팀장은 직접 코드를 만지지 않는다** — 오직 분해·위임·확인만 한다.
+- **어떻게 지시하나**: `list_projects`, `list_employees`, `create_ticket`, `get_ticket`, `list_tickets`,
+  `ask_user` 6개의 MCP 툴로 직원에게 일을 맡기고 진행 상황을 확인한다.
 
-### 직원
+### 직원 — 웹에서 추가/삭제, 이름으로 여러 명
 
-각 직원은 `agents/*.md` 파일 하나로 정의된다. **파일 하나 추가 = 직원 한 명 추가**이고 서버/코드를
-고칠 필요가 없다. 지금 정의돼 있는 직원:
+직원은 **이름으로 구분**된다 (예: `백엔드-홍길동`, `백엔드-김철수` — 같은 성격의 직원을 여러 명 둘 수
+있다). 우측 상단 **"직원 관리"** 버튼에서 추가/삭제하며, 각 직원마다 다음을 정한다:
 
-| 직원 | 담당 CLI | 담당 프로젝트 (`~/Desktop/Project/` 하위) | 정의 파일 |
-|---|---|---|---|
-| 백엔드 직원 | Claude Code | `addiction`, `puppynote-server`, `quitmate-admin-server` (Spring Boot/Gradle) | `agents/backend.md` |
-| 프론트 직원 | Gemini CLI | `addiction-front-app`, `addiction-front-native`, `puppynote-front-app`, `quitmate-admin-front` (React/React Native) | `agents/frontend.md` |
-| (예정) 서류 직원 | Codex CLI | 문서/기획류 작업 | 6단계에서 추가 예정 |
+- **이름**: 티켓의 담당자(`role`) 값으로 그대로 쓰인다.
+- **AI 모델**: Claude Code / Gemini CLI / Codex CLI 중 하나.
+- **담당 업무**: 자유 텍스트 설명 (예: "puppynote-server 백엔드 담당"). 팀장은 `list_employees`로
+  이 설명을 보고 어떤 직원에게 위임할지 정한다 — 고정된 역할 목록이 아니라서, 담당 업무 설명이 곧
+  그 직원의 정의다.
+- 직원은 **특정 언어/프레임워크에 고정되지 않는다.** 작업 전에 대상 프로젝트의 실제 빌드 파일과
+  기존 코드를 보고 스택을 파악하며, 그 프로젝트의 `CLAUDE.md`/`.claude/skills/`에 규칙이 있으면
+  최우선으로 따르도록 프롬프트에 명시돼 있다 (`runner/src/employees/prompt.ts`).
 
-### 협업 방식 — 티켓
+새 직원을 추가하는 즉시(러너 재시작 없이) 다음 티켓부터 반영된다 — 직원 명단은 파일이 아니라 DB에서
+매번 새로 읽는다.
+
+#### AI 모델(CLI) 설치 확인
+
+직원 추가 화면에서 각 모델 옆에 **설치됨 / 설치 안 됨**이 표시된다 (러너가 실행 중인 맥/PC에서
+`claude`/`gemini`/`codex` 바이너리가 PATH에 있는지 확인). **로그인(OAuth) 여부까지는 자동으로 확인하거나
+대신 진행해줄 수 없다** — 브라우저에서 CLI의 로그인 창을 대신 눌러줄 방법이 없기 때문에, 설치 안내만
+보여주고 실제 로그인은 터미널에서 직접 해야 한다:
+
+```bash
+npm install -g @anthropic-ai/claude-code && claude   # 최초 실행 시 로그인 유도
+npm install -g @google/gemini-cli && gemini
+npm install -g @openai/codex && codex login
+```
+
+로그인이 잘못됐거나 그 CLI의 요금제가 안 맞으면(아래 참고) 실제로 티켓을 실행할 때 실패 로그로
+보인다 — 설치 확인은 "켜져 있나"만 보고, 실제 동작 여부는 한 번 시켜봐야 확실하다.
+
+**알려진 이슈**: 이 프로젝트를 만들면서 실제로 겪은 것들.
+- Gemini CLI 무료 티어(`oauth-personal`, "Gemini Code Assist for individuals")가 서비스 종료되어
+  최신 버전(0.53.0)에서도 `IneligibleTierError`가 난다 (Antigravity로 이전 요구). 유료 API 키 등
+  다른 인증 방법이 필요할 수 있다.
+- Codex CLI의 헤드리스 실행(`codex exec`)은 보통 OpenAI API 키 인증을 기대한다 — ChatGPT
+  Plus/Pro의 대화형 로그인만으로 충분한지는 직접 확인이 필요하다.
+- Gemini CLI의 워크스페이스(프로젝트) 레벨 권한 정책은 현재 비활성 상태라, `git push`/`rm` 같은
+  위험 명령을 Claude만큼 확실하게 차단하지 못한다 (사용자 레벨 정책으로 best-effort 차단만 함).
+
+### 협업 방식 — 티켓 + 동료 간 직접 소통
 
 팀장과 직원은 **티켓**이라는 작업 단위로 소통한다 (사람 회사의 지라 티켓과 비슷하다고 생각하면 된다).
 
 ```
 사용자 → 팀장 : "puppynote-server에 헬스체크 추가해줘"
-팀장   → 백엔드 직원 : 티켓 발행 (역할/프로젝트/제목/구체적 작업지시)
+팀장   → 백엔드 직원 : 티켓 발행 (담당자/프로젝트/제목/구체적 작업지시)
 ```
 
 티켓은 다음 상태를 오간다:
@@ -47,94 +108,87 @@ queued(대기) → assigned(배정) → running(작업중) ─┬→ review(검�
                                                  └→ failed(실패)
 ```
 
-- **`blocked`가 핵심이다.** 예를 들어 프론트 직원이 작업하다가 백엔드 API가 없다는 걸 발견하면, 직접
-  백엔드를 건드리지 않고 팀장에게 `blocked`로 보고한다. 팀장이 백엔드 직원에게 새 티켓을 발행해 문제를
-  해결하면, 원래 막혔던 프론트 작업이 자동으로 재개된다. (이게 이 프로젝트를 만드는 이유다.)
-- 직원은 실제 프로젝트 폴더를 직접 건드리지 않고 **git worktree**라는 격리된 작업 공간에서만 일한다 —
-  메인 브랜치가 안전하게 보호된다.
-- `git push`처럼 위험한 명령은 직원 정의 파일의 `requireApproval` 목록에 있으면 실행 전 UI로 사용자
-  승인을 받는다.
+- **`blocked`가 핵심이다.** 직원이 작업 중 자기 담당 밖의 일이 필요하면(예: 프론트 작업 중 없는 백엔드
+  API를 발견) `report_blocked` 툴로 팀장에게 보고한다. 티켓은 즉시 `blocked`가 되고, 팀장이 자동으로
+  깨어나 상황을 파악한 뒤 다른 직원에게 `parentTicketId`를 걸어 새 티켓을 발행한다. 그 새 티켓이
+  사람 승인을 거쳐 **실제로 메인 브랜치에 머지되면**(아래 참고), 원래 막혀있던 티켓이 자동으로
+  재개되어 다시 시도한다.
+- **사소한 건 직원끼리 팀장 없이 직접 묻는다.** `ask_peer` 툴로 동료 직원에게 비동기로 질문을 남길 수
+  있다 (예: "응답 필드명이 isFavorited인가요?"). 물어본 쪽은 답을 기다리지 않고 하던 작업을 계속하고,
+  받는 쪽은 자기 다음 티켓을 받을 때 미답변 질문을 보고 `answer_peer_message`로 답한다.
+- 직원은 실제 프로젝트 폴더를 직접 건드리지 않고 **git worktree**라는 격리된 작업 공간에서만 일한다.
+  `review` 티켓을 사람이 웹 UI에서 **승인**하면, 러너가 그 워크트리 브랜치를 실제로 프로젝트의 메인
+  브랜치에 `git merge`하고 워크트리/브랜치를 정리한다 — 승인은 상태만 바꾸는 게 아니라 실제 머지를
+  일으킨다.
+- `git push`처럼 위험한 명령은 직원의 `requireApproval` 목록에 있으면 실행 전 차단된다
+  (Claude는 `--disallowedTools`로 확실히, Gemini/Codex는 정책 엔진 한계로 best-effort).
 
-### 지금까지 실제로 만들어진 것
+### 프로젝트 — 폴더도 고정이 아니다
 
-- **0단계 (완료)**: 서버·DB·조직도 UI 골격. `docker compose up` 하면 4개 컨테이너(서버/웹/DB/Caddy)가
-  뜨고 `/health`가 응답한다.
-- **1단계 (완료)**: 티켓 CRUD + 상태머신 + 러너 WS 채널을, 실제 Claude/Gemini 대신 **가짜 직원(mock
-  드라이버)**으로 검증했다. 확인된 것: 티켓을 여러 개 동시에 던지면 정해진 동시 실행 수(기본 2개)만큼만
-  병렬로 처리하고 나머지는 큐에서 대기하며, 러너 프로세스가 죽었다 재시작해도 `running` 상태였던 티켓을
-  이어받아 끝까지 완료한다.
-- **2단계 (완료)**: 팀장에게 물릴 MCP 툴 5개(`list_projects`, `create_ticket`, `get_ticket`,
-  `list_tickets`, `ask_user`)와, `claude -p` 헤드리스 프로세스를 스폰해 세션을 `--resume`으로 이어가는
-  러너 쪽 매니저 호출기(`runner/src/manager/`)를 구현했다. **실제 `claude` CLI로 검증 완료** — "puppynote-server
-  프로젝트에 테스트용 티켓을 만들어줘" 라고 지시하면 팀장이 `list_projects`로 존재를 확인한 뒤
-  `create_ticket`을 호출해 실제 티켓이 생성되는 것까지 확인했다.
-- **3단계 (완료)**: 실제 백엔드 직원(Claude)이 `agents/backend.md` 규칙에 따라 git worktree 안에서
-  작업하는 드라이버(`runner/src/drivers/claude.ts`)를 구현했다. **실제 시나리오로 검증 완료** —
-  "puppynote-server에 `/actuator/health` 노출하고 테스트 추가해줘" 티켓을 실행시켰더니, 격리된
-  worktree에서 실제 커밋(`feat: actuator health 엔드포인트 노출 및 테스트 추가`)이 생성됐고, 프로젝트의
-  기존 테스트 컨벤션(`IntegrationTestSupport`)을 따라 테스트를 작성했으며, `./gradlew test`가
-  독립적으로 재실행해도 통과함을 확인했다. 메인 저장소(`~/Desktop/Project/puppynote-server`)는
-  전혀 건드리지 않고 그대로 `main` 브랜치에 깨끗하게 남아있었다.
-- **4단계 (완료)**: React Flow 조직도(`apps/web`) — 팀장/직원 노드, 상태별 색상·펄스 애니메이션,
-  선택한 노드의 티켓 이력과 실시간 로그를 보여주는 DetailPanel, 팀장과 대화하는 ChatBar, `review`/
-  `needs_approval` 티켓에 대한 승인·거부 버튼. **실제 Chrome(Playwright)으로 직접 조작해 검증 완료** —
-  채팅창에 지시를 입력하면 팀장 노드가 초록색으로 바뀌고(`작업중`), 실제 `claude` 응답이 채팅창에
-  스트리밍되고, 티켓이 배정되면 담당 직원 노드가 실시간으로 색이 바뀌고, 노드를 클릭하면 그 직원의
-  로그가 실시간으로 흐르고, `review` 티켓에서 승인 버튼을 누르면 `done`으로 바뀌는 것까지 눈으로 확인했다.
-- **아직 안 된 것**: 외부 접속(5단계), Gemini/Codex 직원 연결(6단계).
+`WORKSPACE_ROOT`(`.env`) 아래 있는 프로젝트는 매번 스캔해서 자동으로 잡힌다 (새 폴더를 만들면 바로
+다음 요청부터 보인다). **`WORKSPACE_ROOT` 밖의 임의 절대경로도** 사용자가 팀장에게 경로를 알려주면
+그대로 작업 대상으로 쓸 수 있다 — `project` 값에 절대경로를 넣으면 러너가 그 경로를 그대로 쓴다.
+
+## 지금까지 실제로 만들어진 것
+
+- **0~4단계 (완료, MVP)**: 서버·DB·조직도 UI 골격, 티켓 상태머신 + 러너, 팀장의 MCP 툴 연결, 실제
+  Claude 직원의 git worktree 작업, React Flow 조직도 UI. 전부 실제 시나리오로 검증했다 (자세한 내용은
+  git 로그와 각 단계 커밋 메시지 참고).
+- **6단계 (완료)**: `report_blocked` → 팀장 자동 호출 → `parentTicketId` 티켓 → 승인 시 실제 머지 →
+  원래 티켓 자동 재개. **실전 시나리오로 검증** — puppynote-front-app에 "즐겨찾기 화면" 작업을 시켰더니
+  필요한 API가 없어 blocked → 팀장이 puppynote-server에 백엔드 티켓 발행 → 실제 즐겨찾기 API 구현 +
+  테스트 통과 → 승인 후 메인에 머지 → 프론트 티켓이 자동 재개되어 그 API로 화면을 완성했다.
+- **7단계 (완료, 원래 계획 밖 확장)**: 직원을 이름 기반 DB 모델로 전환해 웹에서 자유롭게 추가/삭제,
+  AI 모델(Claude/Gemini/Codex) 선택, 담당 업무 자유 기술이 가능해졌다. 직원 간 비동기 질문-답변
+  (`ask_peer`), 임의 절대경로 프로젝트 지원, CLI 설치 여부 확인 UI, 크로스플랫폼(Windows) 경로 처리,
+  git clone 직후 바로 실행되는 설정 스크립트를 추가했다.
+- **5단계 (스킵)**: 외부 접속(Cloudflare Tunnel, 로그인)은 로컬 전용 사용으로 결정해 스킵했다.
+
+### 검증 중 발견해 고친 주요 버그들
+
+- **`job_meta` 이벤트 처리 버그**: 러너 이벤트 객체를 그대로 구조 분해하면서 `type` 필드가 Prisma
+  `update()`에 섞여 들어가 조용히 실패 (`worktreePath`/`sessionId` 미저장). 필드를 명시적으로 뽑아 고쳤다.
+- **티켓 상태 전이 경쟁 조건**: 러너 재연결 시 `recoverAndAssign`과 직원의 상태 보고가 동시에 같은
+  티켓을 건드려 전이가 씹힘. 티켓 단위 락(`withTicketLock`) + 멱등 배정 함수(`ensureAssigned`)로 해결.
+- **React Flow `fitView`는 최초 마운트 때만 적용됨**: 비동기로 나중에 로드되는 직원 노드가 화면 밖으로
+  잘림. 노드 개수가 바뀔 때마다 `useReactFlow().fitView()`를 다시 부르도록 수정.
+- **REST 승인/거부가 UI에 반영 안 됨**: 티켓 변경 브로드캐스트가 러너 이벤트 경로에만 있었음. 내부
+  이벤트(`ticketEvents`) 리스너 한 곳에서 항상 UI로 브로드캐스트하도록 정리.
+- **zustand 선택자가 안정적인 함수 참조라 리렌더링 안 됨**: `statusForRole`/`ticketsForRole` 같은
+  헬퍼 함수를 구독하면 실제 데이터가 바뀌어도 리렌더링이 안 됐다. 데이터 객체 자체를 구독하도록 수정.
+- **승인해도 실제로 머지가 안 됨**: `review → done` 승인이 상태만 바꾸고 워크트리 브랜치를 메인에
+  머지하지 않아서, 완료된 작업이 다른 티켓에서 보이지 않았다. 러너가 실제 `git merge`를 수행하고
+  워크트리를 정리하도록 추가.
+- **재개된 티켓이 워크트리 충돌로 영구 정지**: blocked였다가 재개된 티켓이 같은 id로 다시 워크트리를
+  만들려다 "브랜치 이미 존재" 에러로 실패, 아무도 상태를 안 바꿔서 `running`에 영원히 멈춤. 기존
+  워크트리를 재사용하도록 수정하고, 드라이버가 예외로 죽으면 `failed`로 보고하도록 안전망 추가.
 
 ### 알려진 이슈 — macOS 폴더 권한 (Full Disk Access, 해결됨)
 
-`list_projects`가 `WORKSPACE_ROOT`(`~/Desktop/Project`)를 스캔하거나 `claude` CLI 자체를 실행하려고
-하면 macOS의 TCC(개인정보 보호) 정책 때문에 `EPERM`으로 막혔었다. `~/Desktop`, `~/Documents`,
-`~/Downloads`는 macOS가 특별히 보호하는 폴더라 그 안의 내용을 읽으려는 프로세스는 권한을 받아야 한다.
+`list_projects`가 `WORKSPACE_ROOT`를 스캔하거나 `claude` CLI 자체를 실행하려고 하면 macOS의 TCC
+(개인정보 보호) 정책 때문에 `EPERM`으로 막힌다. `~/Desktop`, `~/Documents`, `~/Downloads`는 macOS가
+특별히 보호하는 폴더라 그 안의 내용을 읽으려는 프로세스는 권한을 받아야 한다.
 
-**`System Settings → Privacy & Security → Full Disk Access`에서 터미널 앱에 권한을 켜주면 해결된다**
-(실제로 확인함 — 권한을 켜기 전엔 `list_projects`와 `claude` 실행이 모두 EPERM으로 막혔고, 켠 뒤에는
-둘 다 정상 동작했다). 러너를 상시 구동시키기 전에 반드시 해줘야 한다.
+**`System Settings → Privacy & Security → Full Disk Access`에서 러너를 실행할 터미널 앱에 권한을
+켜주면 해결된다.** 러너를 상시 구동시키기 전에 반드시 해줘야 한다.
 
-### 3단계 검증 중 발견해 고친 버그 2가지
-
-- **`job_meta` 이벤트 처리 버그**: 러너가 보낸 이벤트 객체를 그대로 구조 분해하면서 `type` 필드가
-  Prisma `update()` 데이터에 섞여 들어가 매번 조용히 실패하고 있었다 (`worktreePath`/`sessionId`가
-  DB에 저장되지 않음). 서버 로그에서 `PrismaClientValidationError`를 보고 발견 → 필요한 필드만 명시적으로
-  뽑아 고쳤다.
-- **티켓 상태 전이 경쟁 조건**: 러너가 재연결되면 `recoverAndAssign`이 오래된 티켓을 다시 배정하는 동시에,
-  직원 드라이버가 자기 상태를 보고하는 이벤트가 겹치면 "invalid ticket transition" 에러가 나며 상태 변경이
-  씹히는 걸 발견했다 (같은 티켓을 두 경로가 동시에 건드림). 티켓 단위 락(`withTicketLock`)으로 같은
-  티켓에 대한 모든 상태 변경을 순서대로 처리하도록 고쳤고, 배정 처리는 이미 assigned 상태면 조용히
-  넘어가는 멱등 함수(`ensureAssigned`)로 분리했다.
-
-### 4단계 검증 중 발견해 고친 버그 3가지
-
-- **React Flow `fitView`가 최초 마운트 때만 적용됨**: 페이지가 열릴 때 `agents` 목록이 아직 비어있어
-  팀장 노드 하나만으로 화면이 맞춰지고, 이후 직원 노드가 비동기로 로드돼도 뷰가 재조정되지 않아 노드가
-  화면 아래로 잘려 보였다. `useReactFlow().fitView()`를 노드 개수가 바뀔 때마다 다시 불러주도록 고쳤다.
-- **REST로 승인/거부해도 UI에 반영 안 됨**: 티켓 상태 변경을 UI에 브로드캐스트하는 로직이 러너발 이벤트
-  경로에만 흩어져 있어서, `POST /api/tickets/:id/approve` 같은 REST 경로로 바뀐 상태는 브라우저로
-  전달되지 않았다. 티켓이 바뀔 때 나가는 내부 이벤트(`ticketEvents`) 리스너 한 곳에서 항상 UI로
-  브로드캐스트하도록 정리했다.
-- **zustand 선택자가 안정적인 함수 참조라 리렌더링이 안 됨**: `OrgChart`/`DetailPanel`이
-  `statusForRole`/`ticketsForRole` 같은 헬퍼 *함수*를 구독하고 있었는데, 이 함수 자체는 매번 같은
-  참조라서 실제 티켓 데이터가 바뀌어도 zustand가 리렌더링을 트리거하지 않았다 (승인 버튼을 눌러도
-  화면이 "검수 대기"로 멈춰 있었음). `tickets` 객체 자체를 구독하도록 고쳐서 실시간 반영이 되게 했다.
-
-## 로컬 실행
+## 로컬 실행 (자세히)
 
 ```bash
-cp .env.example .env   # WORKSPACE_ROOT 등 값 확인/수정
+node scripts/setup.mjs   # 최초 1회 - WORKSPACE_ROOT를 물어보고 .env 생성
 docker compose -f infra/docker-compose.yml up -d --build
 curl localhost:8080/health
 
-# 최초 1회: DB에 Ticket 테이블 생성 (postgres 컨테이너가 뜬 뒤에)
+# 최초 1회: DB 테이블 생성 (postgres 컨테이너가 뜬 뒤에)
 DATABASE_URL="postgresql://aicrew:aicrew@localhost:5432/aicrew" \
   pnpm --filter @ai-crew/server exec prisma db push
 
-# 러너는 호스트에서 직접 실행 (컨테이너 아님 - JDK/Node 툴체인을 그대로 써야 하므로)
+# 러너는 호스트에서 직접 실행 (컨테이너 아님 - JDK/Gradle/git worktree/CLI를 그대로 써야 하므로)
 pnpm --filter @ai-crew/runner dev
 ```
 
-팀장을 직접 불러서 테스트 (별도 터미널에서, `apps/server` 빌드가 먼저 되어 있어야 `mcp/server.js`가 존재함):
+팀장을 CLI로 직접 불러서 테스트 (별도 터미널에서, `apps/server` 빌드가 먼저 되어 있어야
+`mcp/server.js`가 존재함):
 
 ```bash
 pnpm --filter @ai-crew/server build
@@ -144,17 +198,19 @@ pnpm --filter @ai-crew/runner manager "puppynote-server에 헬스체크 엔드�
 세션 id는 `~/.ai-crew/manager-session.json`에 저장되고, 다음 호출부터는 자동으로 `--resume`으로
 이어진다 (대화가 끊기지 않음). 새로 시작하고 싶으면 그 파일을 지우면 된다.
 
-`claude` CLI 없이 MCP 툴 5개만 따로 확인하고 싶으면:
+`claude` CLI 없이 팀장용 MCP 툴만 따로 확인하고 싶으면:
 
 ```bash
 pnpm --filter @ai-crew/server mcp:test
 ```
 
-티켓을 만들어 파이프라인이 도는지 확인:
+직원을 만들고 티켓을 던져서 파이프라인이 도는지 확인:
 
 ```bash
+curl -X POST localhost:8080/api/employees -H "Content-Type: application/json" -d \
+  '{"name":"백엔드-테스트","driver":"claude","taskDescription":"puppynote-server 백엔드 담당"}'
 curl -X POST localhost:8080/api/tickets -H "Content-Type: application/json" \
-  -d '{"role":"backend","project":"puppynote-server","title":"test","spec":"just testing"}'
+  -d '{"role":"백엔드-테스트","project":"puppynote-server","title":"test","spec":"just testing"}'
 curl localhost:8080/api/tickets
 ```
 

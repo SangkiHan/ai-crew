@@ -8,11 +8,10 @@ export type TicketStatus =
   | "done"
   | "failed";
 
-export type AgentRole = "manager" | "backend" | "frontend" | "docs";
-
 export interface Ticket {
   id: string;
-  role: AgentRole;
+  // 직원의 이름(Employee.name)과 같다. 직원이 이름 기반으로 자유롭게 추가/삭제되므로 고정 enum이 아니다.
+  role: string;
   project: string;
   title: string;
   spec: string;

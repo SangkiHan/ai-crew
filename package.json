@@ -6,6 +6,7 @@
     "node": ">=20"
   },
   "scripts": {
+    "setup": "node scripts/setup.mjs",
     "dev:server": "pnpm --filter @ai-crew/server dev",
     "dev:runner": "pnpm --filter @ai-crew/runner dev",
     "dev:web": "pnpm --filter @ai-crew/web dev",
