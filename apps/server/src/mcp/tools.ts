@@ -110,6 +110,13 @@ export function createPlanningDoc(teamId: string, employeeName: string, request:
   return api("/api/planning-docs", { method: "POST", body: JSON.stringify({ teamId, employeeName, request }) });
 }
 
+// 팀장의 search_history MCP 툴 전용 - 완료된 티켓/승인된 기획서를 의미로 검색한다.
+export function searchHistory(teamId: string, query: string, limit?: number) {
+  const qs = new URLSearchParams({ teamId, query });
+  if (limit) qs.set("limit", String(limit));
+  return api(`/api/memory/search?${qs}`);
+}
+
 export async function askUser(question: string) {
   const created = await api<{ id: string }>("/api/questions", {
     method: "POST",

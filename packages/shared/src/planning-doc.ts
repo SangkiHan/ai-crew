@@ -9,6 +9,9 @@ export interface PlanningDoc {
   request: string;
   content: string | null;
   status: PlanningDocStatus;
+  // 기획자와의 대화(티키타카)를 이어가기 위한 세션 id. 수정 요청을 보내면 이 세션을 이어서
+  // 새 초안을 쓴다.
+  sessionId: string | null;
   createdAt: string;
   updatedAt: string;
 }

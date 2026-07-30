@@ -1,5 +1,11 @@
 import type { FastifyInstance } from "fastify";
-import { createPlanningDoc, getPlanningDoc, listPlanningDocs, setPlanningDocStatus } from "../planning/store.js";
+import {
+  createPlanningDoc,
+  getPlanningDoc,
+  listPlanningDocs,
+  markPlanningDocRevising,
+  setPlanningDocStatus,
+} from "../planning/store.js";
 import { getEmployeeByName } from "../employees/store.js";
 import { requestManagerInvocation, requestPlanningDocJob } from "../ws/runner.js";
 
@@ -32,9 +38,26 @@ export function registerPlanningDocRoutes(app: FastifyInstance) {
       return reply.code(403).send({ error: `"${employeeName}"은(는) 이 팀 소속이 아닙니다` });
     }
     const doc = await createPlanningDoc({ teamId, employeeName, request });
-    requestPlanningDocJob(doc);
+    requestPlanningDocJob(doc, request);
     return doc;
   });
+
+  // 사람이 초안을 보고 수정 요청("이 부분 고쳐줘")을 남긴다 - 새로 쓰는 게 아니라 같은 기획자
+  // 세션을 이어서(--resume) 초안을 다듬는다 (티키타카).
+  app.post<{ Params: { id: string }; Body: { message: string } }>(
+    "/api/planning-docs/:id/revise",
+    async (req, reply) => {
+      const doc = await getPlanningDoc(req.params.id);
+      if (!doc) return reply.code(404).send({ error: "not found" });
+      if (doc.status !== "review") {
+        return reply.code(400).send({ error: `review 상태의 기획서만 수정 요청할 수 있습니다 (현재: ${doc.status})` });
+      }
+      if (!req.body.message?.trim()) return reply.code(400).send({ error: "message is required" });
+      const updated = await markPlanningDocRevising(doc.id);
+      requestPlanningDocJob(updated, req.body.message, doc.sessionId ?? undefined);
+      return updated;
+    }
+  );
 
   // 사람이 기획서를 검토하고 승인 - 그 내용을 바탕으로 팀장에게 실제 개발 티켓 발행을 요청한다.
   app.post<{ Params: { id: string } }>("/api/planning-docs/:id/approve", async (req, reply) => {

@@ -1,10 +1,12 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
 }
 
 model Ticket {
@@ -33,13 +35,14 @@ model Ticket {
 // 여러 팀을 만들 수 있게 하기 위한 모델. 팀마다 팀장 세션(대화)과 직원 명단이 분리된다 -
 // 팀장 프롬프트(agents/manager.md) 자체는 팀마다 다르지 않고, 그 팀장이 보는 직원/티켓 범위만 다르다.
 model Team {
-  id           String        @id @default(cuid())
-  name         String        @unique
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  employees    Employee[]
-  tickets      Ticket[]
-  planningDocs PlanningDoc[]
+  id            String        @id @default(cuid())
+  name          String        @unique
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  employees     Employee[]
+  tickets       Ticket[]
+  planningDocs  PlanningDoc[]
+  memoryEntries MemoryEntry[]
 }
 
 // 팀장의 ask_user MCP 툴이 남기는 질문. 4단계 UI가 붙기 전까지는
@@ -94,6 +97,26 @@ model PlanningDoc {
   request      String // 사용자의 원래 요청
   content      String? // 완성된 기획서 (작성 중엔 null)
   status       String   @default("drafting") // drafting | review | approved | rejected
+  // 기획자와의 대화(티키타카)를 이어가기 위한 Claude 세션 id. review 상태에서 수정 요청을
+  // 보내면 이 세션을 --resume해서 새 초안을 이어서 쓴다 - 매번 새로 쓰는 게 아니다.
+  sessionId    String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+// 팀장의 "과거에 뭘 했는지" 기억. 완료된 티켓/기획서를 임베딩해서 저장해두고, 팀장이
+// search_history MCP 툴로 의미 검색을 한다 (정확한 id를 몰라도 "즐겨찾기 관련 작업 뭐 있었지"
+// 같은 질문이 가능). Prisma가 vector 타입을 직접 다루지 못해 Unsupported로 선언하고
+// 실제 읽기/쓰기는 raw SQL로 한다 (apps/server/src/memory/store.ts).
+model MemoryEntry {
+  id         String                      @id @default(cuid())
+  teamId     String
+  team       Team                        @relation(fields: [teamId], references: [id])
+  sourceType String // "ticket" | "planning_doc"
+  sourceId   String
+  content    String // 임베딩에 쓴 원문 - 검색 결과에도 그대로 보여준다
+  embedding  Unsupported("vector(384)")?
+  createdAt  DateTime                    @default(now())
+
+  @@unique([sourceType, sourceId])
 }

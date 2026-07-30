@@ -3,11 +3,13 @@ import { fileURLToPath } from "node:url";
 import type { Employee, RunnerToServerEvent, Ticket } from "@ai-crew/shared";
 import { runClaudeHeadless } from "../claude/headless.js";
 import {
+  clearDriverPid,
   prepareEmployeeJob,
   prepareQaJob,
   reportDriverResult,
   reportQaFallbackIfNeeded,
   toDisallowedBashPatterns,
+  writeDriverPid,
 } from "../employees/prepare.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -70,11 +72,13 @@ export async function runClaudeDriver(
     cwd: worktreePath,
     model: employee.model,
     mcpConfigJson: buildEmployeeMcpConfig(ticket.id, employee.name, employee.teamId),
+    onSpawn: (pid) => writeDriverPid(worktreePath, pid),
     onEvent: (line) => {
       send({ type: "job_log", ticketId: ticket.id, line, ts: now() });
       send({ type: "job_heartbeat", ticketId: ticket.id, ts: now() });
     },
   });
+  await clearDriverPid(worktreePath);
 
   reportDriverResult(ticket, employee, result, send);
 }
@@ -99,11 +103,13 @@ export async function runClaudeQaReview(
     cwd: worktreePath,
     model: qaEmployee.model,
     mcpConfigJson: buildQaMcpConfig(ticket.id),
+    onSpawn: (pid) => writeDriverPid(worktreePath, pid),
     onEvent: (line) => {
       send({ type: "job_log", ticketId: ticket.id, line, ts: now() });
       send({ type: "job_heartbeat", ticketId: ticket.id, ts: now() });
     },
   });
+  await clearDriverPid(worktreePath);
 
   reportQaFallbackIfNeeded(ticket);
 }

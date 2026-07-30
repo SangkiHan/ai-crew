@@ -66,12 +66,14 @@ async function runJob(ticket: Ticket): Promise<void> {
   }
 }
 
-// 팀장이 create_planning_doc으로 위임하면 서버가 보낸다. 티켓 큐와는 별개 경로다.
+// 팀장이 create_planning_doc으로 위임하거나(최초) 사람이 수정 요청을 남기면(티키타카) 서버가
+// 보낸다. 티켓 큐와는 별개 경로다.
 async function handlePlanningDocAssign(event: {
   planningDocId: string;
   teamId: string;
   employeeName: string;
-  request: string;
+  message: string;
+  resumeSessionId?: string;
 }) {
   const employees = await fetchEmployees();
   const employee = employees.find((e) => e.name === event.employeeName);
@@ -84,7 +86,7 @@ async function handlePlanningDocAssign(event: {
     });
     return;
   }
-  return runPlanningDoc(event.planningDocId, employee, event.request, send);
+  return runPlanningDoc(event.planningDocId, employee, event.message, send, event.resumeSessionId);
 }
 
 // 브라우저 채팅바 -> 서버 -> 여기로 온다. 티켓 큐와는 별개 경로 (동시 실행 수 제한에 안 걸림).

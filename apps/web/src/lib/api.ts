@@ -58,6 +58,14 @@ export function rejectPlanningDoc(id: string): Promise<PlanningDoc> {
   return fetch(`/api/planning-docs/${id}/reject`, { method: "POST" }).then((res) => json<PlanningDoc>(res));
 }
 
+export function revisePlanningDoc(id: string, message: string): Promise<PlanningDoc> {
+  return fetch(`/api/planning-docs/${id}/revise`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message }),
+  }).then((res) => json<PlanningDoc>(res));
+}
+
 export function approveTicket(id: string): Promise<Ticket> {
   return fetch(`/api/tickets/${id}/approve`, { method: "POST" }).then((res) => json<Ticket>(res));
 }
