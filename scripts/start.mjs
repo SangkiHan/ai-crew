@@ -98,22 +98,32 @@ async function main() {
       "@localhost:"
     ); // 호스트에서 psql 접속용으로 컨테이너 이름을 localhost로 바꿔치기
 
-  console.log("[1/3] docker compose로 서버/웹/DB/Caddy를 띄웁니다…");
+  console.log("[1/5] docker compose로 서버/웹/DB/Caddy를 띄웁니다…");
   run("docker", ["compose", "-f", COMPOSE_FILE, "up", "-d", "--build"]);
 
-  console.log("[2/3] 서버가 뜰 때까지 기다립니다…");
+  console.log("[2/5] 서버가 뜰 때까지 기다립니다…");
   const healthy = await waitForHealth(`http://localhost:${serverPort}/health`);
   if (!healthy) {
     console.error("서버가 60초 안에 뜨지 않았습니다. `docker compose logs`로 확인해주세요.");
     process.exit(1);
   }
 
-  console.log("[3/3] DB 스키마를 동기화합니다 (이미 최신이면 아무 일도 안 일어남)…");
+  console.log("[3/5] DB 스키마를 동기화합니다 (이미 최신이면 아무 일도 안 일어남)…");
   run("pnpm", ["--filter", "@ai-crew/server", "exec", "prisma", "db", "push"], {
     env: { ...process.env, DATABASE_URL: databaseUrl },
   });
 
-  console.log("[4/4] 러너를 백그라운드로 띄웁니다…");
+  // 러너(호스트 프로세스)는 팀장/직원 MCP 서버(apps/server/src/mcp/*.ts)를
+  // `node apps/server/dist/mcp/*.js`로 직접 스폰한다 - 이건 도커 이미지 안의 dist가 아니라
+  // 호스트 파일시스템의 dist를 가리킨다. 방금 위에서 한 `docker compose up --build`는 컨테이너
+  // 안에만 dist를 만들어서, 이 호스트 build 없이는 이 dist가 아예 존재한 적이 없다 - 그러면
+  // 러너가 MCP 서버를 스폰할 때 조용히 실패하고, 팀장이 list_projects/create_ticket 같은 툴을
+  // 하나도 못 쓰는 채로 동작한다(겉으로는 정상 종료처럼 보여서 원인 파악이 매우 어렵다).
+  console.log("[4/5] 러너가 로컬에서 쓸 MCP 서버(apps/server)를 호스트에도 빌드합니다…");
+  run("pnpm", ["--filter", "@ai-crew/shared", "build"]);
+  run("pnpm", ["--filter", "@ai-crew/server", "build"]);
+
+  console.log("[5/5] 러너를 백그라운드로 띄웁니다…");
   const logFd = openSync(RUNNER_LOG_FILE, "a");
   const runner = spawn("pnpm", ["--filter", "@ai-crew/runner", "dev"], {
     cwd: REPO_ROOT,
