@@ -228,6 +228,13 @@ curl localhost:8080/health
 DATABASE_URL="postgresql://aicrew:aicrew@localhost:5432/aicrew" \
   pnpm --filter @ai-crew/server exec prisma db push
 
+# 러너(호스트 프로세스)는 팀장/직원 MCP 서버를 apps/server/dist/mcp/*.js로 직접 스폰한다 -
+# 이건 도커 이미지 안의 dist가 아니라 호스트 파일시스템의 dist라서, 위 docker build와 별개로
+# 호스트에서도 한 번 빌드해둬야 한다. 빠뜨리면 팀장이 list_projects/create_ticket 같은 MCP
+# 툴을 하나도 못 쓰는 채로 조용히 동작한다 (겉보기엔 정상 종료라 원인 파악이 아주 어렵다).
+pnpm --filter @ai-crew/shared build
+pnpm --filter @ai-crew/server build
+
 # 러너는 호스트에서 직접 실행 (컨테이너 아님 - JDK/Gradle/git worktree/CLI를 그대로 써야 하므로)
 # 포그라운드로 로그를 보면서 띄우고 싶으면 pnpm start 대신 이렇게:
 pnpm --filter @ai-crew/runner dev

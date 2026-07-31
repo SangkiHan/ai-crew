@@ -1,3 +1,6 @@
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import spawn from "cross-spawn";
 import WebSocket from "ws";
 import { isQaEmployee, type ChatImage, type DriverStatus, type RunnerToServerEvent, type ServerToRunnerEvent, type Ticket } from "@ai-crew/shared";
@@ -271,6 +274,31 @@ function drain() {
 // 버전이 --append-system-prompt-file/--mcp-config(파일)/--output-format stream-json을 몰라서
 // 조용히 무시해버리는 문제로 이어질 수 있다 - 실제로 원인 불명의 "MCP 툴이 하나도 안 불림" 현상을
 // 겪은 뒤 추가함.
+// 팀장/직원/QA/기획 세션에 붙는 MCP 서버는 러너(호스트 프로세스)가 apps/server/dist/mcp/*.js를
+// `node <경로>`로 직접 스폰한다 - 이건 도커 이미지 안의 dist가 아니라 호스트 파일시스템의
+// dist다. `pnpm --filter @ai-crew/server build`를 호스트에서 한 번도 안 돌렸으면 이 파일들이
+// 아예 존재한 적이 없는데, 그래도 러너/서버 자체는 멀쩡히 뜨고 claude 세션도 정상 종료돼서
+// (MCP 서버 하나 연결 실패는 claude 입장에서 치명적 에러가 아니다) 겉으로는 아무 문제 없어
+// 보인다 - 실제로 팀장이 list_projects/create_ticket을 전혀 못 쓰는 채로 동작하는 원인 불명
+// 버그로 이어진 적이 있어서, 시작 시 미리 확인하고 크게 경고한다.
+const REPO_ROOT_FOR_MCP_CHECK = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const MCP_ENTRY_FILES = ["server.js", "employee-server.js", "qa-server.js", "planning-server.js"];
+
+function checkMcpServerBuild() {
+  const mcpDir = join(REPO_ROOT_FOR_MCP_CHECK, "apps", "server", "dist", "mcp");
+  const missing = MCP_ENTRY_FILES.filter((f) => !existsSync(join(mcpDir, f)));
+  if (missing.length === 0) {
+    console.log(`[runner] MCP 서버 빌드 확인됨 (${mcpDir})`);
+    return;
+  }
+  console.error(
+    `\n[runner] 경고: 다음 MCP 서버 파일이 없습니다 - ${missing.join(", ")} (경로: ${mcpDir})\n` +
+      `팀장/직원이 list_projects/create_ticket 같은 MCP 툴을 전혀 못 쓰는 채로 조용히 동작합니다 ` +
+      `(세션 자체는 정상 종료되어서 겉으로는 문제없어 보입니다). 아래 명령으로 호스트에도 빌드해주세요:\n` +
+      `  pnpm --filter @ai-crew/shared build && pnpm --filter @ai-crew/server build\n`
+  );
+}
+
 function logClaudeDiagnostics() {
   const versionCheck = spawn("claude", ["--version"]);
   let versionOut = "";
@@ -333,5 +361,6 @@ function connect() {
   });
 }
 
+checkMcpServerBuild();
 logClaudeDiagnostics();
 connect();
