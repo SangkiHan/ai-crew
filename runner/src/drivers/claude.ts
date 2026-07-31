@@ -24,9 +24,13 @@ const QA_MCP_SERVER_ENTRY =
 const AI_CREW_SERVER_URL = process.env.AI_CREW_SERVER_URL ?? "http://localhost:8080";
 
 const EMPLOYEE_MCP_SERVER_NAME = "ai-crew-employee-tools";
-const EMPLOYEE_TOOL_NAMES = ["report_blocked", "list_employees", "ask_peer", "answer_peer_message"].map(
-  (tool) => `mcp__${EMPLOYEE_MCP_SERVER_NAME}__${tool}`
-);
+const EMPLOYEE_TOOL_NAMES = [
+  "report_blocked",
+  "list_employees",
+  "ask_peer",
+  "ask_employee",
+  "answer_peer_message",
+].map((tool) => `mcp__${EMPLOYEE_MCP_SERVER_NAME}__${tool}`);
 
 const QA_MCP_SERVER_NAME = "ai-crew-qa-tools";
 const QA_TOOL_NAMES = ["report_qa_result"].map((tool) => `mcp__${QA_MCP_SERVER_NAME}__${tool}`);
