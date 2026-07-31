@@ -46,12 +46,20 @@ function summarizeEvent(event: any): string | null {
   return null;
 }
 
+// claude -p의 프롬프트가 "/"로 시작하면, CLI가 이걸 실제 프롬프트가 아니라 슬래시 명령
+// 호출로 오인한다 (예: 사용자가 그냥 "/정리해줘"라고 말했을 뿐인데 "Unknown command: ..."만
+// 찍고 빈 응답으로 끝나버림 - 실제로 겪은 버그). 첫 글자가 "/"가 안 되도록 안전하게 감싼다.
+function escapeSlashCommand(message: string): string {
+  if (!message.trimStart().startsWith("/")) return message;
+  return `다음은 사용자가 보낸 메시지입니다 (그대로 프롬프트로 취급하세요):\n${message}`;
+}
+
 // claude -p 헤드리스 프로세스를 스폰하고 stream-json 출력을 파싱한다.
 // 팀장(runner/src/manager)과 실제 직원 드라이버(runner/src/drivers/claude.ts) 양쪽에서 공유한다.
 export function runClaudeHeadless(opts: HeadlessRunOptions): Promise<HeadlessRunResult> {
   const args = [
     "-p",
-    opts.message,
+    escapeSlashCommand(opts.message),
     "--output-format",
     "stream-json",
     "--verbose",
