@@ -174,7 +174,10 @@ async function handleRunnerEvent(event: RunnerToServerEvent, app: FastifyInstanc
 // 진행 중인 것처럼("검수를 요청했습니다") 안내하면서 정작 승인 버튼은 없고 이미 자동으로
 // 처리되는 모순이 생겨서, 팀장이 그 모순을 스스로 알아채고 자기 소스코드를 뒤지는
 // 엉뚱한 행동을 한 적이 있다 - 알림 문구는 항상 "이미 어떻게 됐다"만 말해야 한다.
-function notifyManagerOfTicketResult(ticket: Ticket, outcome: "done" | "failed"): void {
+export function notifyManagerOfTicketResult(
+  ticket: Ticket,
+  outcome: "done" | "failed" | "needs_approval"
+): void {
   const message =
     outcome === "done"
       ? `직원 "${ticket.role}"이 티켓 작업을 완료했습니다. 사람 승인 절차 없이 자동으로 ` +
@@ -183,11 +186,18 @@ function notifyManagerOfTicketResult(ticket: Ticket, outcome: "done" | "failed")
         `- 변경사항: ${ticket.diffSummary ?? "(확인 중)"}\n\n` +
         `## 직원의 최종 보고\n${ticket.resultText ?? "(보고 없음)"}\n\n` +
         `위 내용을 사용자에게 요약해서 전달하세요. 이미 끝난 일이니 당신이 추가로 할 조치는 없습니다.`
-      : `직원 "${ticket.role}"의 티켓 작업이 실패로 종료됐습니다.\n\n` +
-        `- 티켓: ${ticket.title}\n- 프로젝트: ${ticket.project}\n\n` +
-        `## 직원의 마지막 보고\n${ticket.resultText ?? "(보고 없음)"}\n\n` +
-        `사용자에게 실패 사실과 사유를 전달하세요. 다른 직원으로 재시도가 필요하면 새 티켓을 ` +
-        `만들어 위임할 수 있습니다.`;
+      : outcome === "needs_approval"
+        ? `직원 "${ticket.role}"의 티켓이 QA 검증에서 ${ticket.qaCycles}회 연속 반려되어 ` +
+          `사람 확인이 필요한 상태(needs_approval)가 됐습니다.\n\n` +
+          `- 티켓: ${ticket.title}\n- 프로젝트: ${ticket.project}\n` +
+          `- QA의 마지막 반려 사유: ${ticket.qaNote ?? "(없음)"}\n\n` +
+          `사용자에게 이 상황을 전달하세요. 계속 재시도할지, 포기할지는 사용자가 UI에서 승인/거부로 ` +
+          `직접 결정합니다 - 당신이 대신 결정할 수는 없습니다.`
+        : `직원 "${ticket.role}"의 티켓 작업이 실패로 종료됐습니다.\n\n` +
+          `- 티켓: ${ticket.title}\n- 프로젝트: ${ticket.project}\n\n` +
+          `## 직원의 마지막 보고\n${ticket.resultText ?? "(보고 없음)"}\n\n` +
+          `사용자에게 실패 사실과 사유를 전달하세요. 다른 직원으로 재시도가 필요하면 새 티켓을 ` +
+          `만들어 위임할 수 있습니다.`;
   requestManagerInvocation(ticket.teamId, message);
 }
 
