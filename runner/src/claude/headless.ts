@@ -102,7 +102,12 @@ export async function runClaudeHeadless(opts: HeadlessRunOptions): Promise<Headl
   };
 
   return new Promise((resolve, reject) => {
-    const child = spawn("claude", args, { cwd: opts.cwd });
+    // stdin을 열어둔 채(기본값 pipe) 아무것도 안 쓰고 안 닫으면, claude가 몇 초간 stdin을
+    // 기다리다 포기하는 동작이 모든 호출에서 매번 관찰됐다("Warning: no stdin data received").
+    // 헤드리스 호출은 애초에 stdin으로 줄 게 없으니 처음부터 닫아서 이 대기/타이밍 자체를
+    // 없앤다 - claude가 내부적으로 MCP 서버를 자식 프로세스로 또 띄우는데, 윈도우에서 부모
+    // 프로세스의 stdio 상태가 애매하면 그 하위 스폰이 불안정해지는 걸로 추정된다.
+    const child = spawn("claude", args, { cwd: opts.cwd, stdio: ["ignore", "pipe", "pipe"] });
     opts.onSpawn?.(child.pid);
 
     let buffer = "";
