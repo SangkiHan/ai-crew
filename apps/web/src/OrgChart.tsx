@@ -62,10 +62,11 @@ export function OrgChart() {
   const teams = useStore((s) => s.teams);
   const employees = useStore((s) => s.employees);
   const managerStatusByTeam = useStore((s) => s.managerStatusByTeam);
-  // statusForEmployee 자체는 store 안에서 안정적인 함수 참조라 이걸 구독해서는 tickets가
-  // 바뀌어도 리렌더링되지 않는다. tickets 객체를 직접 구독해 리렌더링을 트리거하고,
+  // statusForEmployee 자체는 store 안에서 안정적인 함수 참조라 이걸 구독해서는 tickets/상담 상태가
+  // 바뀌어도 리렌더링되지 않는다. 두 상태를 직접 구독해 리렌더링을 트리거하고,
   // 계산은 getState()로 매번 새로 한다.
   const tickets = useStore((s) => s.tickets);
+  const consultingEmployeeCounts = useStore((s) => s.consultingEmployeeCounts);
   const setSelectedNode = useStore((s) => s.setSelectedNode);
   const setSelectedTeamId = useStore((s) => s.setSelectedTeamId);
 
@@ -152,7 +153,7 @@ export function OrgChart() {
 
     return { nodes, edges };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agents, teams, employees, managerStatusByTeam, tickets]);
+  }, [agents, teams, employees, managerStatusByTeam, tickets, consultingEmployeeCounts]);
 
   return (
     <div className="h-full w-full">

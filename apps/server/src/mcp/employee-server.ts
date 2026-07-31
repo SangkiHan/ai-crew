@@ -69,7 +69,7 @@ server.tool(
     question: z.string().describe("구체적인 질문 (예: 'remark 필드가 실제 응답에 어떤 이름/타입으로 내려오나요?')"),
   },
   async ({ employeeName, project, question }) => {
-    const result = await consultEmployee(TEAM_ID!, employeeName, project, question);
+    const result = await consultEmployee(TEAM_ID!, employeeName, project, question, EMPLOYEE_NAME!);
     return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
   }
 );

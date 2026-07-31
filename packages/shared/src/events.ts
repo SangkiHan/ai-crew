@@ -8,7 +8,10 @@ export type ServerToUiEvent =
   | { type: "manager_log"; teamId: string; requestId: string; line: string; ts: string }
   | { type: "manager_result"; teamId: string; requestId: string; resultText: string; success: boolean }
   | { type: "manager_status"; teamId: string; status: "idle" | "busy" }
-  | { type: "planning_doc_updated"; doc: PlanningDoc };
+  | { type: "planning_doc_updated"; doc: PlanningDoc }
+  // ask_employee(consult)로 직원 간 실시간 소통이 시작/종료될 때 - 두 직원(질문자/답변자)
+  // 이름을 같이 보내 org chart에서 둘 다 "상담 중"으로 표시할 수 있게 한다.
+  | { type: "employee_consult_status"; employeeNames: string[]; status: "consulting" | "idle" };
 
 export type UiToServerEvent =
   | { type: "chat_message"; text: string }

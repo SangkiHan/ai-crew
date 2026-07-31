@@ -116,10 +116,14 @@ export function registerTicketRoutes(app: FastifyInstance) {
     }
   );
 
+  // review/needs_approval 외에 blocked도 허용한다 - 사람이 보기에 더 이상 처리할 필요가 없는
+  // (다른 방식으로 해결했다/취소한다) blocked 티켓을 웹에서 직접 종료할 방법이 없어서, 그 티켓의
+  // 원래 담당 직원이 org chart에 "확인 필요"로 계속 남아있는 문제가 있었다. blocked -> failed는
+  // 이미 허용된 전이(packages/shared/src/ticket.ts)라 상태 자체는 그대로 재사용한다.
   app.post<{ Params: { id: string } }>("/api/tickets/:id/reject", async (req, reply) => {
     const ticket = await getTicket(req.params.id);
     if (!ticket) return reply.code(404).send({ error: "not found" });
-    if (ticket.status !== "review" && ticket.status !== "needs_approval") {
+    if (ticket.status !== "review" && ticket.status !== "needs_approval" && ticket.status !== "blocked") {
       return reply.code(400).send({ error: `cannot reject ticket in status ${ticket.status}` });
     }
     return transitionTicket(ticket.id, "failed");

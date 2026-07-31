@@ -11,6 +11,7 @@ import {
   listEmployees,
   listProjects,
   listTickets,
+  reviseTicket,
   searchHistory,
 } from "./tools.js";
 
@@ -108,6 +109,22 @@ server.tool(
   async ({ status }) => {
     const tickets = await listTickets(TEAM_ID!, status);
     return { content: [{ type: "text" as const, text: JSON.stringify(tickets, null, 2) }] };
+  }
+);
+
+server.tool(
+  "revise_ticket",
+  "사용자가 이미 완료(done)되었거나 검수 대기(review) 중인 티켓에 대해 수정을 요청하면 이 툴을 " +
+    "쓰세요. 새 티켓을 또 만드는 게 아니라, 그 티켓을 작업했던 담당 직원의 Claude Code 세션을 " +
+    "그대로 이어서(--resume) 수정사항만 반영합니다 - 방금 자기가 뭘 했는지 전부 기억한 채로 " +
+    "이어가므로 새로 설명할 필요가 없습니다. list_tickets/get_ticket으로 대상 티켓을 먼저 찾으세요.",
+  {
+    ticketId: z.string().describe("수정할 티켓의 id (list_tickets/get_ticket 결과 중 하나)"),
+    message: z.string().describe("사용자가 요청한 수정 내용 그대로"),
+  },
+  async ({ ticketId, message }) => {
+    const ticket = await reviseTicket(ticketId, TEAM_ID!, message);
+    return { content: [{ type: "text" as const, text: JSON.stringify(ticket, null, 2) }] };
   }
 );
 

@@ -22,7 +22,27 @@ function isHistoryTicket(ticket: Ticket): boolean {
   return HISTORY_STATUSES.includes(ticket.status);
 }
 
-function TicketRow({ ticket, active, onClick }: { ticket: Ticket; active: boolean; onClick: () => void }) {
+// qa_review 동안 ticket.role은 원래 개발자 이름 그대로다(위 DetailPanel 주석 참고) - 그래서
+// 개발자 자신의 패널에도 이 티켓이 계속 보인다. 그런데 실제로 지금 코드를 들여다보는 건 QA
+// 직원이지 개발자가 아니므로, QA 직원 패널이 아닌 곳에서 "QA 검증중"이라고만 쓰면 개발자가
+// 직접 검증하는 것처럼 보인다 - 사용자가 실제로 이렇게 헷갈렸다. 보는 사람이 QA 담당이 아니면
+// "대기중"으로 구분해서 표시한다.
+function ticketStatusLabel(status: TicketStatus, viewerIsQa: boolean): string {
+  if (status === "qa_review" && !viewerIsQa) return "QA 검증 대기중";
+  return STATUS_LABEL[status];
+}
+
+function TicketRow({
+  ticket,
+  active,
+  onClick,
+  viewerIsQa,
+}: {
+  ticket: Ticket;
+  active: boolean;
+  onClick: () => void;
+  viewerIsQa: boolean;
+}) {
   return (
     <button
       onClick={onClick}
@@ -33,7 +53,7 @@ function TicketRow({ ticket, active, onClick }: { ticket: Ticket; active: boolea
     >
       <div className="flex items-center justify-between gap-2">
         <span className="truncate font-medium text-slate-200">{ticket.title}</span>
-        <span className="shrink-0 text-xs text-slate-400">{STATUS_LABEL[ticket.status]}</span>
+        <span className="shrink-0 text-xs text-slate-400">{ticketStatusLabel(ticket.status, viewerIsQa)}</span>
       </div>
       <div className="mt-0.5 text-xs text-slate-500">{ticket.project}</div>
     </button>
@@ -79,6 +99,10 @@ function TicketSummary({ ticket }: { ticket: Ticket }) {
 function ApprovalActions({ ticket }: { ticket: Ticket }) {
   const [pending, setPending] = useState(false);
   const [revisionText, setRevisionText] = useState("");
+  // blocked 티켓은 승인 개념이 없다(서버 /approve가 review/needs_approval만 받는다) - 사람이
+  // 다른 방식으로 이미 해결했거나 더 진행할 필요가 없다고 판단하면 그냥 종료(삭제)만 가능하게
+  // 한다. reject는 blocked -> failed도 허용하도록 서버에서 이미 열어뒀다(tickets.ts).
+  const isBlocked = ticket.status === "blocked";
 
   async function handle(action: (id: string) => Promise<Ticket>) {
     setPending(true);
@@ -125,19 +149,21 @@ function ApprovalActions({ ticket }: { ticket: Ticket }) {
         </div>
       )}
       <div className="flex gap-2">
-        <button
-          disabled={pending}
-          onClick={() => handle(approveTicket)}
-          className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
-        >
-          승인
-        </button>
+        {!isBlocked && (
+          <button
+            disabled={pending}
+            onClick={() => handle(approveTicket)}
+            className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+          >
+            승인
+          </button>
+        )}
         <button
           disabled={pending}
           onClick={() => handle(rejectTicket)}
           className="rounded-md bg-rose-600 px-3 py-1 text-xs font-medium text-white hover:bg-rose-500 disabled:opacity-50"
         >
-          거부
+          {isBlocked ? "삭제 (막힘 종료)" : "거부"}
         </button>
       </div>
     </div>
@@ -269,6 +295,7 @@ export function DetailPanel() {
               ticket={t}
               active={t.id === selectedTicketId}
               onClick={() => setSelectedTicketId(t.id)}
+              viewerIsQa={isQa}
             />
           ))
         )}
@@ -276,9 +303,10 @@ export function DetailPanel() {
 
       {selectedTicket && <TicketSummary ticket={selectedTicket} />}
 
-      {selectedTicket && (selectedTicket.status === "review" || selectedTicket.status === "needs_approval") && (
-        <ApprovalActions ticket={selectedTicket} />
-      )}
+      {selectedTicket &&
+        (selectedTicket.status === "review" ||
+          selectedTicket.status === "needs_approval" ||
+          selectedTicket.status === "blocked") && <ApprovalActions ticket={selectedTicket} />}
 
       {selectedTicket && (
         <div
