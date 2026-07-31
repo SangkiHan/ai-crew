@@ -91,6 +91,11 @@ export function runClaudeHeadless(opts: HeadlessRunOptions): Promise<HeadlessRun
     let stderr = "";
     let sessionId = opts.resumeSessionId ?? "";
     let resultText = "";
+    // --output-format stream-json이 어떤 이유로든 안 지켜지고 claude가 그냥 일반 텍스트를
+    // 뱉는 환경(윈도우에서 실제로 관측됨 - 버전은 같은데도 발생)이 있다. 그런 줄은 JSON으로
+    // 파싱은 안 되지만 실제로는 진짜 응답 내용이므로, 버리지 않고 모아뒀다가 result 이벤트를
+    // 끝내 못 받으면 이걸 대신 응답으로 쓴다 - "성공했는데 빈 응답"보다는 훨씬 낫다.
+    const plainTextLines: string[] = [];
 
     child.stdout!.on("data", (chunk: Buffer) => {
       // 윈도우에서 CRLF로 올 수 있어 \r\n 둘 다 줄바꿈으로 취급한다.
@@ -107,7 +112,8 @@ export function runClaudeHeadless(opts: HeadlessRunOptions): Promise<HeadlessRun
         } catch {
           // stream-json이어야 할 줄이 파싱 안 되면 (부분 라인이 아니라 진짜 문제일 수 있음)
           // 조용히 삼키지 말고 원본을 남긴다 - "성공했는데 아무 로그도 없다" 같은 상황을 진단할 단서.
-          opts.onEvent?.(`[claude] (파싱 실패) ${line.slice(0, 300)}`);
+          opts.onEvent?.(`[claude] (JSON 아님, 원문으로 취급) ${line.slice(0, 300)}`);
+          plainTextLines.push(rawLine);
           continue;
         }
         if (typeof event.session_id === "string") sessionId = event.session_id;
@@ -129,10 +135,13 @@ export function runClaudeHeadless(opts: HeadlessRunOptions): Promise<HeadlessRun
       const success = code === 0;
       if (!success) {
         opts.onEvent?.(`[claude] 비정상 종료 (code ${code}): ${stderr || "(stderr 없음)"}`);
+      } else if (!resultText && plainTextLines.length > 0) {
+        // stream-json의 result 이벤트는 못 받았지만, JSON이 아닌 일반 텍스트 줄들이 있었다면
+        // (예: 이 환경에서 --output-format이 안 지켜짐) 그걸 이어붙여 실제 응답으로 쓴다.
+        resultText = plainTextLines.join("\n").trim();
+        opts.onEvent?.(`[claude] (stream-json 형식이 아니어서 원문 텍스트를 응답으로 사용했습니다)`);
       } else if (!resultText) {
-        // 종료 코드는 0인데 result 이벤트를 못 뽑아냈다면 (stdout 파싱이 전부 실패했거나,
-        // claude가 아예 stream-json을 못 뱉었을 가능성) 원인 추정에 남은 유일한 단서인
-        // buffer/stderr라도 남긴다 - 완전히 빈 응답으로 조용히 넘어가지 않는다.
+        // 그것도 없으면 정말 아무 단서가 없는 것 - stderr/남은 버퍼라도 남긴다.
         opts.onEvent?.(
           `[claude] 종료 코드는 0이지만 응답 텍스트를 못 읽었습니다. ` +
             `stderr: ${stderr.trim() || "(없음)"} / 남은 버퍼: ${buffer.slice(0, 300) || "(없음)"}`
