@@ -5,7 +5,24 @@
 import spawn from "cross-spawn";
 import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// 실제 팀장 호출은 cwd가 ai-crew 레포 "루트"다 (이 스크립트가 있는 runner 폴더가 아니라
+// 그 한 단계 위) - 지난 테스트는 runner 폴더에서 실행해서 이 차이를 아직 못 걸렀다.
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+process.chdir(REPO_ROOT);
+
+// 실제 러너(bootstrap.ts)는 claude를 스폰하기 전에 레포의 .env를 process.env로 로드한다 -
+// 이 스크립트는 지금까지 그걸 안 했다. .env를 로드하면 cross-spawn이 기본으로 그 값들까지
+// 전부 물려받은 채로 claude를 스폰하게 된다 - 이것도 같이 재현해본다.
+const envPath = join(REPO_ROOT, ".env");
+try {
+  process.loadEnvFile(envPath);
+  console.log(".env 로드됨:", envPath);
+} catch (err) {
+  console.log(".env 로드 실패(무시):", err.message);
+}
 
 const systemPromptFile = join(tmpdir(), "debug-system-prompt.txt");
 writeFileSync(systemPromptFile, "당신은 테스트용 어시스턴트입니다.", "utf-8");
