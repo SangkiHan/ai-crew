@@ -1,4 +1,4 @@
-import type { Employee, PeerMessage } from "@ai-crew/shared";
+import type { Employee, PeerMessage, Team } from "@ai-crew/shared";
 
 const AI_CREW_SERVER_URL = process.env.AI_CREW_SERVER_URL ?? "http://localhost:8080";
 
@@ -6,6 +6,12 @@ const AI_CREW_SERVER_URL = process.env.AI_CREW_SERVER_URL ?? "http://localhost:8
 export async function fetchEmployees(): Promise<Employee[]> {
   const res = await fetch(`${AI_CREW_SERVER_URL}/api/employees`);
   if (!res.ok) throw new Error(`failed to fetch employees: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchTeams(): Promise<Team[]> {
+  const res = await fetch(`${AI_CREW_SERVER_URL}/api/teams`);
+  if (!res.ok) throw new Error(`failed to fetch teams: ${res.status}`);
   return res.json();
 }
 

@@ -4,4 +4,6 @@ export interface Team {
   name: string;
   createdAt: string;
   updatedAt: string;
+  // 이 팀이 담당하는 프로젝트 이름/절대경로 목록 (선택). 팀장 시스템 프롬프트에 그대로 포함된다.
+  projects: string[];
 }

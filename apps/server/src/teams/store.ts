@@ -3,12 +3,19 @@ import type { Team } from "@ai-crew/shared";
 
 const prisma = new PrismaClient();
 
-function toTeam(row: { id: string; name: string; createdAt: Date; updatedAt: Date }): Team {
+function toTeam(row: {
+  id: string;
+  name: string;
+  createdAt: Date;
+  updatedAt: Date;
+  projects: string[];
+}): Team {
   return {
     id: row.id,
     name: row.name,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+    projects: row.projects,
   };
 }
 
@@ -22,8 +29,13 @@ export async function getTeam(id: string): Promise<Team | null> {
   return row ? toTeam(row) : null;
 }
 
-export async function createTeam(name: string): Promise<Team> {
-  const row = await prisma.team.create({ data: { name } });
+export async function createTeam(name: string, projects?: string[]): Promise<Team> {
+  const row = await prisma.team.create({ data: { name, projects: projects ?? [] } });
+  return toTeam(row);
+}
+
+export async function updateTeamProjects(id: string, projects: string[]): Promise<Team> {
+  const row = await prisma.team.update({ where: { id }, data: { projects } });
   return toTeam(row);
 }
 

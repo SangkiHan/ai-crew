@@ -4,6 +4,7 @@ import { DetailPanel } from "./DetailPanel.js";
 import { ChatBar } from "./ChatBar.js";
 import { EmployeeManager } from "./EmployeeManager.js";
 import { PlanningDocPanel } from "./PlanningDocPanel.js";
+import { TeamProjectsManager } from "./TeamProjectsManager.js";
 import { TeamSwitcher } from "./TeamSwitcher.js";
 import { useStore } from "./store.js";
 import { useUiSocket } from "./lib/ws.js";
@@ -17,6 +18,7 @@ export function App() {
   const setEmployees = useStore((s) => s.setEmployees);
   const setTickets = useStore((s) => s.setTickets);
   const [managingEmployees, setManagingEmployees] = useState(false);
+  const [managingProjects, setManagingProjects] = useState(false);
   const [showPlanningDocs, setShowPlanningDocs] = useState(false);
 
   useUiSocket();
@@ -42,13 +44,22 @@ export function App() {
           <h1 className="text-sm font-semibold tracking-wide text-slate-300">ai-crew</h1>
           <TeamSwitcher />
         </div>
-        <button
-          onClick={() => setManagingEmployees(true)}
-          disabled={!selectedTeamId}
-          className="rounded-md border border-slate-700 px-3 py-1 text-xs text-slate-300 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          직원 관리
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setManagingProjects(true)}
+            disabled={!selectedTeamId}
+            className="rounded-md border border-slate-700 px-3 py-1 text-xs text-slate-300 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            프로젝트 관리
+          </button>
+          <button
+            onClick={() => setManagingEmployees(true)}
+            disabled={!selectedTeamId}
+            className="rounded-md border border-slate-700 px-3 py-1 text-xs text-slate-300 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            직원 관리
+          </button>
+        </div>
       </header>
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <aside className="w-96 shrink-0 border-r border-slate-800">
@@ -65,6 +76,9 @@ export function App() {
       </div>
       {managingEmployees && selectedTeamId && (
         <EmployeeManager teamId={selectedTeamId} onClose={() => setManagingEmployees(false)} />
+      )}
+      {managingProjects && selectedTeamId && (
+        <TeamProjectsManager teamId={selectedTeamId} onClose={() => setManagingProjects(false)} />
       )}
       {showPlanningDocs && selectedTeamId && (
         <PlanningDocPanel teamId={selectedTeamId} onClose={() => setShowPlanningDocs(false)} />

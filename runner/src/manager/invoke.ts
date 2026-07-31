@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { loadAgentDefinition } from "../agents/load.js";
 import { runClaudeHeadless } from "../claude/headless.js";
+import { fetchTeams } from "../employees/api.js";
 import { readSessionId, writeSessionId } from "./session.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -50,6 +51,21 @@ function buildMcpConfig(teamId: string): string {
   });
 }
 
+// 팀에 등록된 담당 프로젝트 목록을 시스템 프롬프트에 그대로 박아 넣는다. list_projects MCP
+// 툴이 (연결 문제 등으로) 안 붙어도, 팀장이 자기 담당 프로젝트가 뭔지는 확실히 알 수 있게 하는
+// 이중 안전장치 - 정적 텍스트라 MCP 연결 여부와 무관하게 항상 전달된다.
+async function buildProjectsNote(teamId: string): Promise<string> {
+  try {
+    const teams = await fetchTeams();
+    const team = teams.find((t) => t.id === teamId);
+    if (!team || team.projects.length === 0) return "";
+    const list = team.projects.map((p) => `- ${p}`).join("\n");
+    return `\n\n## 이 팀이 담당하는 프로젝트\n(list_projects로 다시 찾을 필요 없이, 아래 목록을 우선 신뢰하세요)\n${list}`;
+  } catch {
+    return ""; // 서버 조회 실패해도 팀장 호출 자체를 막지는 않는다.
+  }
+}
+
 // 사용자 메시지(또는 직원의 blocked/report 이벤트)로 팀장을 깨운다. 어느 팀의 팀장인지는
 // teamId로 구분된다 - 팀마다 대화 세션(--resume)과 MCP 툴이 보는 직원/티켓 범위가 분리된다.
 // 팀장의 프롬프트(agents/manager.md) 자체는 모든 팀이 공유한다 - 내용이 팀마다 다르지 않다.
@@ -60,10 +76,11 @@ export async function invokeManager(
 ): Promise<ManagerResult> {
   const agent = await loadAgentDefinition(AGENT_DEFINITION_PATH);
   const previousSessionId = await readSessionId(teamId);
+  const projectsNote = await buildProjectsNote(teamId);
 
   const result = await runClaudeHeadless({
     message,
-    systemPrompt: agent.prompt,
+    systemPrompt: agent.prompt + projectsNote,
     allowedTools: [...agent.allowedTools, ...MCP_TOOL_NAMES],
     permissionMode: "dontAsk",
     cwd: MANAGER_CWD,

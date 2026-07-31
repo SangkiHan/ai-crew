@@ -43,6 +43,10 @@ model Team {
   tickets       Ticket[]
   planningDocs  PlanningDoc[]
   memoryEntries MemoryEntry[]
+  // 이 팀이 담당하는 프로젝트 이름(WORKSPACE_ROOT 아래) 또는 절대경로 목록. 팀장 호출 시
+  // 시스템 프롬프트에 그대로 박아 넣어서, list_projects MCP 툴 연결 여부와 무관하게 팀장이
+  // 자기 담당 프로젝트를 확실히 알 수 있게 한다 (선택 입력 - 비워두면 기존처럼 동작).
+  projects      String[]      @default([])
 }
 
 // 팀장의 ask_user MCP 툴이 남기는 질문. 4단계 UI가 붙기 전까지는

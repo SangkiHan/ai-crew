@@ -26,6 +26,14 @@ export function deleteTeam(id: string): Promise<{ ok: true }> {
   return fetch(`/api/teams/${id}`, { method: "DELETE" }).then((res) => json<{ ok: true }>(res));
 }
 
+export function updateTeamProjects(id: string, projects: string[]): Promise<Team> {
+  return fetch(`/api/teams/${id}/projects`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ projects }),
+  }).then((res) => json<Team>(res));
+}
+
 export function fetchTickets(): Promise<Ticket[]> {
   return fetch("/api/tickets").then((res) => json<Ticket[]>(res));
 }
