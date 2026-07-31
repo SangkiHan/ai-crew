@@ -111,22 +111,28 @@ export function ChatBar({
           ))
         )}
       </div>
-      <div className="flex items-center gap-2 border-t border-slate-800 p-3">
-        <input
+      <div className="flex items-end gap-2 border-t border-slate-800 p-3">
+        <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") handleSend();
+            // Enter만 누르면 전송, Shift+Enter는 줄바꿈 - 여러 줄 입력이 가능해졌으니
+            // 한 줄짜리 input이던 때와 동일하게 Enter로 바로 보낼 수 있어야 한다.
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              handleSend();
+            }
           }}
           placeholder={
             managerStatus === "busy"
               ? "팀장이 작업 중입니다…"
               : planningMode
                 ? "어떤 서비스를 기획할지 말해보세요"
-                : "팀장에게 지시하기 (파일 참고가 필요하면 절대경로를 그대로 적어주세요)"
+                : "팀장에게 지시하기 (파일 참고가 필요하면 절대경로를 그대로 적어주세요, Shift+Enter로 줄바꿈)"
           }
           disabled={managerStatus === "busy"}
-          className="flex-1 rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500 disabled:opacity-50"
+          rows={4}
+          className="max-h-48 flex-1 resize-none overflow-y-auto rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500 disabled:opacity-50"
         />
         <button
           onClick={handleSend}
