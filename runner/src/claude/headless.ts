@@ -13,10 +13,6 @@ export interface HeadlessRunOptions {
   model?: string;
   resumeSessionId?: string;
   mcpConfigJson?: string;
-  // cwd 밖의 추가 디렉터리에도 Read/Grep/Glob 등 툴 접근을 열어준다(--add-dir). 팀장이 여러
-  // 프로젝트에 걸친 요청(예: 프론트+백엔드 API 계약 설계)을 받았을 때, 실제 프로젝트 코드를
-  // 직접 읽고 양쪽에 같은 스펙을 못 박아 위임할 수 있게 하기 위함.
-  addDirs?: string[];
   onEvent?: (line: string) => void;
   // 워크트리에 pid를 기록해두면(claude/gemini/codex 드라이버가 씀), 러너 재시작 후 이 티켓을
   // 다시 집어들 때 이전 세션이 아직 살아있는지 확인하고 정리할 수 있다.
@@ -179,9 +175,6 @@ export async function runClaudeHeadless(opts: HeadlessRunOptions): Promise<Headl
   }
   if (opts.resumeSessionId) {
     args.push("--resume", opts.resumeSessionId);
-  }
-  if (opts.addDirs?.length) {
-    args.push("--add-dir", ...opts.addDirs);
   }
 
   const cleanupTempDir = () => {
