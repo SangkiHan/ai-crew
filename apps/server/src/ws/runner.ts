@@ -1,11 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
-import type { DriverStatus, PlanningDoc, RunnerToServerEvent, ServerToRunnerEvent } from "@ai-crew/shared";
+import { ticketBranchName, type DriverStatus, type PlanningDoc, type RunnerToServerEvent, type ServerToRunnerEvent, type Ticket } from "@ai-crew/shared";
 import {
   ensureAssigned,
   findOrphaned,
   getTicket,
   recordHeartbeat,
+  saveTicketMemory,
   ticketEvents,
   transitionTicket,
   updateMeta,
@@ -79,10 +80,21 @@ async function handleRunnerEvent(event: RunnerToServerEvent, app: FastifyInstanc
         const updated = await transitionTicket(event.ticketId, "qa_review");
         await pushToAnyRunner(updated.id);
       } else {
-        await transitionTicket(event.ticketId, "review");
+        // transitionTicket이 반환하는 티켓에는 resultText/diffSummary가 이미 반영돼 있다 -
+        // 같은 티켓에 대한 락(withTicketLock)이 job_meta -> job_status 순서를 보장하므로,
+        // 여기서 다시 조회할 필요 없이 이 반환값을 그대로 쓴다.
+        const updated = await transitionTicket(event.ticketId, "review");
+        notifyManagerOfTicketResult(updated, "review");
+        // 사용자 결정: 사람이 매번 UI에서 승인 버튼을 누를 필요 없이 곧바로 메인 브랜치에
+        // 커밋(머지)한다 - 검토는 팀장의 완료 보고(위 notifyManagerOfTicketResult)를 사용자가
+        // 직접 읽고 필요하면 후속 지시를 내리는 방식으로 한다. QA가 있는 팀은 이미 QA 통과 시
+        // 사람 승인 없이 자동 완료되므로(applyQaVerdict), 이건 QA 없는 팀에 같은 정책을 맞추는
+        // 것뿐이다.
+        await autoApproveTicket(updated);
       }
     } else {
-      await transitionTicket(event.ticketId, event.status);
+      const updated = await transitionTicket(event.ticketId, event.status);
+      if (event.status === "failed") notifyManagerOfTicketResult(updated, "failed");
     }
   } else if (event.type === "planning_doc_log") {
     app.log.info({ planningDocId: event.planningDocId }, event.line);
@@ -97,6 +109,8 @@ async function handleRunnerEvent(event: RunnerToServerEvent, app: FastifyInstanc
     await updateMeta(event.ticketId, {
       worktreePath: event.worktreePath,
       sessionId: event.sessionId,
+      resultText: event.resultText,
+      diffSummary: event.diffSummary,
     });
   } else if (event.type === "manager_log") {
     broadcastToUi({
@@ -155,6 +169,39 @@ async function handleRunnerEvent(event: RunnerToServerEvent, app: FastifyInstanc
   }
 }
 
+// 직원이 작업을 끝냈는데도(성공/실패 모두) 팀장한테 아무 보고가 안 가서 사용자가 채팅에서
+// 아무 결과도 못 보는 문제가 있었다 - 티켓 상세 화면을 직접 열어봐야만 알 수 있었다. review로
+// 넘어가거나 최종 실패했을 때 팀장을 깨워 직원의 최종 보고(resultText)와 변경사항 요약
+// (diffSummary)을 전달하고, 사용자에게 요약해서 알리도록 한다. 팀장이 이미 바쁘면(busyTeams)
+// requestManagerInvocation이 조용히 스킵한다 - blocked 알림(REST /block 경로)과 같은 한계다.
+function notifyManagerOfTicketResult(ticket: Ticket, outcome: "review" | "failed"): void {
+  const message =
+    outcome === "review"
+      ? `직원 "${ticket.role}"이 티켓 작업을 마치고 검수를 요청했습니다.\n\n` +
+        `- 티켓: ${ticket.title}\n- 프로젝트: ${ticket.project}\n` +
+        `- 변경사항: ${ticket.diffSummary ?? "(확인 중)"}\n\n` +
+        `## 직원의 최종 보고\n${ticket.resultText ?? "(보고 없음)"}\n\n` +
+        `위 내용을 사용자에게 요약해서 전달하세요. 최종 승인/거부/수정 요청은 사용자가 UI에서 ` +
+        `직접 하므로 당신은 보고만 하면 됩니다.`
+      : `직원 "${ticket.role}"의 티켓 작업이 실패로 종료됐습니다.\n\n` +
+        `- 티켓: ${ticket.title}\n- 프로젝트: ${ticket.project}\n\n` +
+        `## 직원의 마지막 보고\n${ticket.resultText ?? "(보고 없음)"}\n\n` +
+        `사용자에게 실패 사실과 사유를 전달하세요. 다른 직원으로 재시도가 필요하면 새 티켓을 ` +
+        `만들어 위임할 수 있습니다.`;
+  requestManagerInvocation(ticket.teamId, message);
+}
+
+// review에 도달한 티켓을 사람 승인 없이 바로 done으로 넘기고 실제로 머지한다 - QA 통과 티켓이
+// 이미 이렇게 동작하는 것과 같은 정책이다(applyQaVerdict). 검토는 notifyManagerOfTicketResult로
+// 전달되는 완료 보고를 사람이 채팅에서 직접 읽는 방식으로 대체한다.
+async function autoApproveTicket(ticket: Ticket): Promise<void> {
+  const done = await transitionTicket(ticket.id, "done");
+  if (done.worktreePath) {
+    requestMerge(done.id, done.project, ticketBranchName(done.id), done.worktreePath);
+    saveTicketMemory(done);
+  }
+}
+
 export interface ManagerInvocationRequest {
   ok: true;
   requestId: string;
@@ -204,6 +251,16 @@ export function requestPlanningDocJob(doc: PlanningDoc, message: string, resumeS
     message,
     resumeSessionId,
   };
+  socket.send(JSON.stringify(event));
+}
+
+// 사람이 review 티켓에 수정 요청을 남기면 호출된다. 새 티켓/새 워크트리가 아니라 그 티켓을
+// 작업했던 담당 직원의 기존 워크트리와 Claude Code 세션(sessionId)을 그대로 이어서(--resume)
+// 수정사항을 반영한다 - 기획서 티키타카 수정 요청과 같은 패턴이다.
+export function requestTicketRevise(ticket: Ticket, message: string): void {
+  const socket = [...runnerSockets][0];
+  if (!socket) return; // 러너가 없으면 조용히 스킵 - 티켓은 running으로 남고 사람이 나중에 재시도해야 함
+  const event: ServerToRunnerEvent = { type: "ticket_revise", ticket, message };
   socket.send(JSON.stringify(event));
 }
 

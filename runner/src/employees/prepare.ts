@@ -135,12 +135,26 @@ export function reportDriverResult(
   ticket: Ticket,
   employee: Employee,
   result: DriverResult,
-  send: (event: RunnerToServerEvent) => void
+  send: (event: RunnerToServerEvent) => void,
+  diffSummary?: string
 ) {
   const now = () => new Date().toISOString();
 
-  if (result.sessionId) {
-    send({ type: "job_meta", ticketId: ticket.id, sessionId: result.sessionId });
+  send({
+    type: "job_meta",
+    ticketId: ticket.id,
+    sessionId: result.sessionId,
+    resultText: result.resultText || "(직원이 텍스트 보고를 남기지 않았습니다)",
+    diffSummary,
+  });
+
+  if (diffSummary?.startsWith("커밋 없음")) {
+    send({
+      type: "job_log",
+      ticketId: ticket.id,
+      line: `[${employee.name}] ⚠️ ${diffSummary}`,
+      ts: now(),
+    });
   }
 
   if (result.success) {

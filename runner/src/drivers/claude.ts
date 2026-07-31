@@ -11,6 +11,8 @@ import {
   toDisallowedBashPatterns,
   writeDriverPid,
 } from "../employees/prepare.js";
+import { buildEmployeePrompt } from "../employees/prompt.js";
+import { summarizeDiff } from "../worktree.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, "..", "..", ".."); // drivers -> src -> runner -> repo root
@@ -80,7 +82,56 @@ export async function runClaudeDriver(
   });
   await clearDriverPid(worktreePath);
 
-  reportDriverResult(ticket, employee, result, send);
+  const diffSummary = await summarizeDiff(worktreePath).catch(
+    (err) => `(변경사항 확인 실패: ${err instanceof Error ? err.message : String(err)})`
+  );
+  reportDriverResult(ticket, employee, result, send, diffSummary);
+}
+
+// review 티켓에 사람이 남긴 수정 요청. 새 워크트리를 만들지 않고 ticket.worktreePath를 그대로
+// 재사용하며, ticket.sessionId로 원래 담당 직원의 Claude Code 세션을 --resume해서 이어간다 -
+// 담당 직원이 방금 뭘 했는지 전부 기억한 채로 수정사항만 반영한다(기획서 티키타카와 같은 패턴).
+export async function runClaudeReviseDriver(
+  ticket: Ticket,
+  employee: Employee,
+  message: string,
+  send: (event: RunnerToServerEvent) => void
+): Promise<void> {
+  if (!ticket.worktreePath) {
+    throw new Error(`수정 요청할 워크트리가 없습니다 (ticket ${ticket.id})`);
+  }
+  const worktreePath = ticket.worktreePath;
+  const now = () => new Date().toISOString();
+
+  send({
+    type: "job_log",
+    ticketId: ticket.id,
+    line: `[${employee.name}] 수정 요청 반영 시작 (이전 세션 이어서): ${message}`,
+    ts: now(),
+  });
+
+  const result = await runClaudeHeadless({
+    message,
+    systemPrompt: buildEmployeePrompt(employee.taskDescription),
+    allowedTools: [...employee.allowedTools, ...EMPLOYEE_TOOL_NAMES],
+    disallowedTools: toDisallowedBashPatterns(employee.requireApproval),
+    permissionMode: "acceptEdits",
+    cwd: worktreePath,
+    model: employee.model,
+    resumeSessionId: ticket.sessionId ?? undefined,
+    mcpConfigJson: buildEmployeeMcpConfig(ticket.id, employee.name, employee.teamId),
+    onSpawn: (pid) => writeDriverPid(worktreePath, pid),
+    onEvent: (line) => {
+      send({ type: "job_log", ticketId: ticket.id, line, ts: now() });
+      send({ type: "job_heartbeat", ticketId: ticket.id, ts: now() });
+    },
+  });
+  await clearDriverPid(worktreePath);
+
+  const diffSummary = await summarizeDiff(worktreePath).catch(
+    (err) => `(변경사항 확인 실패: ${err instanceof Error ? err.message : String(err)})`
+  );
+  reportDriverResult(ticket, employee, result, send, diffSummary);
 }
 
 // QA 검증 세션. 개발자가 쓴 워크트리를 그대로 재사용하고(prepareQaJob), 코드 수정 툴은 안 준다 -

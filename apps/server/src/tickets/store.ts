@@ -1,8 +1,18 @@
 import { PrismaClient } from "@prisma/client";
 import { EventEmitter } from "node:events";
 import { canTransition, type Ticket, type TicketStatus } from "@ai-crew/shared";
+import { saveMemory } from "../memory/store.js";
 
 const prisma = new PrismaClient();
+
+// 팀장이 나중에 search_history로 찾을 수 있도록 완료된 티켓을 임베딩해서 저장한다.
+// 응답을 막지 않는다 (로컬 임베딩이라도 수백ms~1초 걸릴 수 있음). 사람이 UI에서 승인하는
+// 경로(routes/tickets.ts)와 review 도달 시 자동으로 병합하는 경로(ws/runner.ts) 양쪽에서 쓴다.
+export function saveTicketMemory(ticket: Ticket): void {
+  saveMemory(ticket.teamId, "ticket", ticket.id, `${ticket.title}\n\n${ticket.spec}`).catch((err) =>
+    console.error("티켓 임베딩 저장 실패:", err)
+  );
+}
 
 export const ticketEvents = new EventEmitter();
 
@@ -42,6 +52,8 @@ function toTicket(row: {
   lastHeartbeatAt: Date | null;
   qaCycles: number;
   qaNote: string | null;
+  resultText: string | null;
+  diffSummary: string | null;
 }): Ticket {
   return {
     id: row.id,
@@ -60,6 +72,8 @@ function toTicket(row: {
     lastHeartbeatAt: row.lastHeartbeatAt ? row.lastHeartbeatAt.toISOString() : null,
     qaCycles: row.qaCycles,
     qaNote: row.qaNote,
+    resultText: row.resultText,
+    diffSummary: row.diffSummary,
   };
 }
 
@@ -191,7 +205,7 @@ export async function recordHeartbeat(id: string): Promise<void> {
 
 export async function updateMeta(
   id: string,
-  meta: { worktreePath?: string; sessionId?: string }
+  meta: { worktreePath?: string; sessionId?: string; resultText?: string; diffSummary?: string }
 ): Promise<Ticket> {
   return withTicketLock(id, async () => {
     const row = await prisma.ticket.update({ where: { id }, data: meta });

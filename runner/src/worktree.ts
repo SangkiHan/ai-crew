@@ -1,11 +1,27 @@
 import { execFile } from "node:child_process";
-import { mkdir, access } from "node:fs/promises";
+import { mkdir, access, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { promisify } from "node:util";
 import { ticketBranchName } from "@ai-crew/shared";
 
 const execFileAsync = promisify(execFile);
+
+// 워크트리를 만든 시점의 브랜치 시작점(base) 커밋을 이 파일에 남겨둔다. 승인 직전에
+// "이 티켓이 실제로 커밋을 만들었는지"(diffStat)를 계산하려면 base가 있어야 하는데, 수정
+// 요청(revise) 흐름은 워크트리를 새로 만들지 않고 재사용하므로 그때도 다시 읽을 수 있어야
+// 한다 - DB 컬럼 대신 워크트리 안 파일로 두면 두 흐름(최초 실행/revise) 모두 같은 코드로 처리된다.
+function baseShaFile(worktreePath: string): string {
+  return join(worktreePath, ".ai-crew-base-sha");
+}
+
+export async function readBaseSha(worktreePath: string): Promise<string | null> {
+  try {
+    return (await readFile(baseShaFile(worktreePath), "utf-8")).trim() || null;
+  } catch {
+    return null;
+  }
+}
 
 const WORKTREES_ROOT = process.env.WORKTREES_ROOT ?? join(homedir(), ".ai-crew", "worktrees");
 
@@ -43,8 +59,38 @@ export async function createWorktree(projectPath: string, project: string, ticke
     return { branch, worktreePath };
   }
   await mkdir(join(WORKTREES_ROOT, groupName), { recursive: true });
+  const { stdout: baseSha } = await execFileAsync("git", ["-C", projectPath, "rev-parse", "HEAD"]);
   await execFileAsync("git", ["-C", projectPath, "worktree", "add", "-b", branch, worktreePath]);
+  await writeFile(baseShaFile(worktreePath), baseSha.trim()).catch(() => {});
   return { branch, worktreePath };
+}
+
+// 승인 전에 사람이 "정말 반영할 코드가 있는지" 확인할 수 있게, 이 티켓 브랜치가 base(워크트리를
+// 만든 시점의 HEAD) 대비 실제로 커밋을 남겼는지 요약한다. "승인눌렀는데 코드가 없어"(직원이
+// 조사만 하고 커밋 없이 끝난 경우 review로 넘어가면서 사람이 모르고 머지 승인)를 막기 위함이다.
+export async function summarizeDiff(worktreePath: string): Promise<string> {
+  const baseSha = await readBaseSha(worktreePath);
+  if (!baseSha) return "(base 커밋을 찾을 수 없어 변경사항을 확인할 수 없습니다)";
+  const { stdout: countOut } = await execFileAsync("git", [
+    "-C",
+    worktreePath,
+    "rev-list",
+    "--count",
+    `${baseSha}..HEAD`,
+  ]);
+  const commitCount = Number(countOut.trim()) || 0;
+  if (commitCount === 0) {
+    return "커밋 없음 - 이 티켓은 아직 실제로 반영된 변경사항이 없습니다. 승인해도 코드가 반영되지 않습니다.";
+  }
+  const { stdout: statOut } = await execFileAsync("git", [
+    "-C",
+    worktreePath,
+    "diff",
+    "--shortstat",
+    `${baseSha}..HEAD`,
+  ]);
+  const stat = statOut.trim() || "(변경 통계 없음)";
+  return `커밋 ${commitCount}개, ${stat}`;
 }
 
 export async function removeWorktree(projectPath: string, worktreePath: string): Promise<void> {
