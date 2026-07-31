@@ -1,10 +1,16 @@
 import type { FastifyInstance } from "fastify";
-import { ticketBranchName, type Ticket } from "@ai-crew/shared";
-import { applyQaVerdict, createTicket, getTicket, listTickets, transitionTicket } from "../tickets/store.js";
+import { ticketBranchName } from "@ai-crew/shared";
+import {
+  applyQaVerdict,
+  createTicket,
+  getTicket,
+  listTickets,
+  saveTicketMemory,
+  transitionTicket,
+} from "../tickets/store.js";
 import { getEmployeeByName } from "../employees/store.js";
 import { getTeam } from "../teams/store.js";
-import { saveMemory } from "../memory/store.js";
-import { pushToAnyRunner, requestManagerInvocation, requestMerge } from "../ws/runner.js";
+import { pushToAnyRunner, requestManagerInvocation, requestMerge, requestTicketRevise } from "../ws/runner.js";
 import { broadcastToUi } from "../ws/ui.js";
 
 // 경로 구분자가 "/"든 "\"든(서버는 리눅스 컨테이너 안이라 윈도우 경로의 "\"를 node:path가
@@ -22,14 +28,6 @@ function resolveRegisteredProject(project: string, registeredProjects: string[])
   const requestedName = lastPathSegment(project).toLowerCase();
   const match = registeredProjects.find((p) => lastPathSegment(p).toLowerCase() === requestedName);
   return match ?? project;
-}
-
-// 팀장이 나중에 search_history로 찾을 수 있도록 완료된 티켓을 임베딩해서 저장한다.
-// 응답을 막지 않는다 (로컬 임베딩이라도 수백ms~1초 걸릴 수 있음).
-function saveTicketMemory(ticket: Ticket): void {
-  saveMemory(ticket.teamId, "ticket", ticket.id, `${ticket.title}\n\n${ticket.spec}`).catch((err) =>
-    console.error("티켓 임베딩 저장 실패:", err)
-  );
 }
 
 interface CreateTicketBody {
@@ -94,6 +92,25 @@ export function registerTicketRoutes(app: FastifyInstance) {
     }
     return updated;
   });
+
+  // 사람이 review 티켓을 보고 수정 요청("이 부분 고쳐줘")을 남긴다 - 새 워크트리로 처음부터
+  // 다시 시키는 게 아니라, 담당 직원의 기존 워크트리와 Claude Code 세션을 그대로 이어서
+  // (--resume) 수정사항만 반영한다 (기획서 티키타카와 같은 패턴). 반영이 끝나면 다시 review로
+  // 돌아온다 (review -> running -> review는 이미 허용된 전이).
+  app.post<{ Params: { id: string }; Body: { message: string } }>(
+    "/api/tickets/:id/revise",
+    async (req, reply) => {
+      const ticket = await getTicket(req.params.id);
+      if (!ticket) return reply.code(404).send({ error: "not found" });
+      if (ticket.status !== "review") {
+        return reply.code(400).send({ error: `review 상태의 티켓만 수정 요청할 수 있습니다 (현재: ${ticket.status})` });
+      }
+      if (!req.body.message?.trim()) return reply.code(400).send({ error: "message is required" });
+      const updated = await transitionTicket(ticket.id, "running");
+      requestTicketRevise(updated, req.body.message);
+      return updated;
+    }
+  );
 
   app.post<{ Params: { id: string } }>("/api/tickets/:id/reject", async (req, reply) => {
     const ticket = await getTicket(req.params.id);

@@ -24,7 +24,14 @@ export type RunnerToServerEvent =
   | { type: "job_log"; ticketId: string; line: string; ts: string }
   | { type: "job_status"; ticketId: string; status: Ticket["status"] }
   | { type: "job_heartbeat"; ticketId: string; ts: string }
-  | { type: "job_meta"; ticketId: string; worktreePath?: string; sessionId?: string }
+  | {
+      type: "job_meta";
+      ticketId: string;
+      worktreePath?: string;
+      sessionId?: string;
+      resultText?: string;
+      diffSummary?: string;
+    }
   | { type: "manager_log"; teamId: string; requestId: string; line: string; ts: string }
   | { type: "manager_result"; teamId: string; requestId: string; resultText: string; success: boolean }
   | { type: "merge_result"; ticketId: string; success: boolean; message: string }
@@ -56,6 +63,14 @@ export type ServerToRunnerEvent =
       message: string;
       // 이어서 쓰는 수정 요청이면 이전 초안의 세션 id (없으면 새 세션으로 시작).
       resumeSessionId?: string;
+    }
+  | {
+      // review 상태 티켓에 사람이 수정 요청을 남기면 서버가 보낸다. 새 워크트리를 만들지
+      // 않고 ticket.worktreePath를 그대로 재사용하며, ticket.sessionId로 같은 담당 직원의
+      // Claude Code 세션을 --resume해서 이어간다 (기획서 티키타카와 같은 패턴).
+      type: "ticket_revise";
+      ticket: Ticket;
+      message: string;
     }
   | {
       type: "create_project_request";

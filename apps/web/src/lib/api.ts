@@ -115,6 +115,14 @@ export function approveTicket(id: string): Promise<Ticket> {
   return fetch(`/api/tickets/${id}/approve`, { method: "POST" }).then((res) => json<Ticket>(res));
 }
 
+export function reviseTicket(id: string, message: string): Promise<Ticket> {
+  return fetch(`/api/tickets/${id}/revise`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message }),
+  }).then((res) => json<Ticket>(res));
+}
+
 export function rejectTicket(id: string): Promise<Ticket> {
   return fetch(`/api/tickets/${id}/reject`, { method: "POST" }).then((res) => json<Ticket>(res));
 }

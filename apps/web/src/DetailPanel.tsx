@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import type { Ticket, TicketStatus } from "@ai-crew/shared";
+import { ticketBranchName, type Ticket, type TicketStatus } from "@ai-crew/shared";
 import { useStore } from "./store.js";
-import { approveTicket, rejectTicket } from "./lib/api.js";
+import { approveTicket, rejectTicket, reviseTicket } from "./lib/api.js";
 
 const STATUS_LABEL: Record<TicketStatus, string> = {
   queued: "대기",
@@ -33,8 +33,41 @@ function TicketRow({ ticket, active, onClick }: { ticket: Ticket; active: boolea
   );
 }
 
+// 검수 화면에서 "어떤 프로젝트, 어떤 브랜치 작업인지 모르겠다"는 혼란을 막기 위해 항상 먼저
+// 보여준다. 직원의 최종 보고(resultText)는 raw 로그를 스크롤해서 찾지 않아도 바로 읽을 수
+// 있게 별도로 표시하고, diffSummary로 실제 커밋 여부를 눈에 띄게 보여줘 "승인눌렀는데 코드가
+// 없는" 사고(커밋 없이 조사만 하고 끝난 세션을 그대로 승인)를 막는다.
+function TicketSummary({ ticket }: { ticket: Ticket }) {
+  const noCommits = ticket.diffSummary?.startsWith("커밋 없음");
+  return (
+    <div className="rounded-lg border border-slate-800 bg-slate-800/40 p-3 text-xs">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-slate-400">
+        <span>
+          프로젝트: <span className="text-slate-200">{ticket.project}</span>
+        </span>
+        <span>
+          브랜치: <span className="font-mono text-slate-200">{ticketBranchName(ticket.id)}</span>
+        </span>
+      </div>
+      {ticket.diffSummary && (
+        <div className={`mt-1.5 ${noCommits ? "font-medium text-amber-400" : "text-slate-400"}`}>
+          {noCommits ? "⚠️ " : "변경사항: "}
+          {ticket.diffSummary}
+        </div>
+      )}
+      {ticket.resultText && (
+        <div className="mt-2 whitespace-pre-wrap border-t border-slate-700 pt-2 text-slate-200">
+          <div className="mb-1 text-[11px] uppercase tracking-wide text-slate-500">직원의 최종 보고</div>
+          {ticket.resultText}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ApprovalActions({ ticket }: { ticket: Ticket }) {
   const [pending, setPending] = useState(false);
+  const [revisionText, setRevisionText] = useState("");
 
   async function handle(action: (id: string) => Promise<Ticket>) {
     setPending(true);
@@ -45,22 +78,57 @@ function ApprovalActions({ ticket }: { ticket: Ticket }) {
     }
   }
 
+  async function handleRevise() {
+    const message = revisionText.trim();
+    if (!message) return;
+    setPending(true);
+    try {
+      await reviseTicket(ticket.id, message);
+      setRevisionText("");
+    } finally {
+      setPending(false);
+    }
+  }
+
   return (
-    <div className="mt-2 flex gap-2">
-      <button
-        disabled={pending}
-        onClick={() => handle(approveTicket)}
-        className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
-      >
-        승인
-      </button>
-      <button
-        disabled={pending}
-        onClick={() => handle(rejectTicket)}
-        className="rounded-md bg-rose-600 px-3 py-1 text-xs font-medium text-white hover:bg-rose-500 disabled:opacity-50"
-      >
-        거부
-      </button>
+    <div className="mt-2 flex flex-col gap-2">
+      {ticket.status === "review" && (
+        <div className="flex gap-2">
+          <input
+            value={revisionText}
+            onChange={(e) => setRevisionText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleRevise();
+            }}
+            placeholder="수정 요청하기 (담당 직원이 이전 작업을 기억한 채로 이어서 반영합니다)"
+            disabled={pending}
+            className="flex-1 rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-slate-100 outline-none focus:border-sky-500 disabled:opacity-50"
+          />
+          <button
+            disabled={pending || !revisionText.trim()}
+            onClick={handleRevise}
+            className="rounded-md border border-slate-700 px-3 py-1 text-xs text-slate-300 hover:bg-slate-800 disabled:opacity-50"
+          >
+            수정 요청
+          </button>
+        </div>
+      )}
+      <div className="flex gap-2">
+        <button
+          disabled={pending}
+          onClick={() => handle(approveTicket)}
+          className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+        >
+          승인
+        </button>
+        <button
+          disabled={pending}
+          onClick={() => handle(rejectTicket)}
+          className="rounded-md bg-rose-600 px-3 py-1 text-xs font-medium text-white hover:bg-rose-500 disabled:opacity-50"
+        >
+          거부
+        </button>
+      </div>
     </div>
   );
 }
@@ -140,6 +208,8 @@ export function DetailPanel() {
           ))
         )}
       </div>
+
+      {selectedTicket && <TicketSummary ticket={selectedTicket} />}
 
       {selectedTicket && (selectedTicket.status === "review" || selectedTicket.status === "needs_approval") && (
         <ApprovalActions ticket={selectedTicket} />

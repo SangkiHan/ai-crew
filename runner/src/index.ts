@@ -5,7 +5,7 @@ import spawn from "cross-spawn";
 import WebSocket from "ws";
 import { isQaEmployee, type DriverStatus, type RunnerToServerEvent, type ServerToRunnerEvent, type Ticket } from "@ai-crew/shared";
 import { fetchEmployees } from "./employees/api.js";
-import { runClaudeDriver, runClaudeQaReview } from "./drivers/claude.js";
+import { runClaudeDriver, runClaudeQaReview, runClaudeReviseDriver } from "./drivers/claude.js";
 import { runGeminiDriver } from "./drivers/gemini.js";
 import { runCodexDriver } from "./drivers/codex.js";
 import { runMock } from "./drivers/mock.js";
@@ -21,9 +21,15 @@ const SERVER_WS_URL = process.env.SERVER_WS_URL ?? "ws://localhost:8080/ws/runne
 const MAX_CONCURRENT = Number(process.env.RUNNER_MAX_CONCURRENT ?? 2);
 const RECONNECT_DELAY_MS = 2000;
 
+// 일반 배정(normal)과 review 티켓 수정 요청(revise)을 같은 동시실행 제한(MAX_CONCURRENT)
+// 아래에서 처리하기 위해 하나의 큐로 합친다 - revise는 별도 워크트리를 새로 만들지 않고
+// 기존 워크트리/세션을 재사용하므로 같은 티켓에 두 작업이 동시에 도는 사고를 피하려면 어차피
+// 순서대로(드라이버 pid 파일로) 처리돼야 한다.
+type QueueItem = { kind: "normal"; ticket: Ticket } | { kind: "revise"; ticket: Ticket; message: string };
+
 let ws: WebSocket;
 let active = 0;
-const queue: Ticket[] = [];
+const queue: QueueItem[] = [];
 
 function send(event: RunnerToServerEvent) {
   if (ws.readyState === WebSocket.OPEN) {
@@ -70,6 +76,29 @@ async function runJob(ticket: Ticket): Promise<void> {
       console.log(`[runner] "${employee.driver}" 드라이버는 아직 없어 mock으로 대체합니다`);
       return runMock(ticket, send);
   }
+}
+
+// 사람이 review 티켓에 남긴 수정 요청. 서버가 review -> running으로 전이시키고 나서 보낸다.
+// 지금은 claude 드라이버(세션 --resume)만 지원한다 - gemini/codex는 세션 이어가기 자체를 아직
+// 검증하지 않았다.
+async function runReviseJob(ticket: Ticket, message: string): Promise<void> {
+  const employees = await fetchEmployees();
+  const employee = employees.find((e) => e.name === ticket.role);
+  if (!employee) {
+    console.log(`[runner] role "${ticket.role}"에 맞는 직원이 없어 수정 요청을 처리할 수 없습니다`);
+    send({ type: "job_status", ticketId: ticket.id, status: "failed" });
+    return;
+  }
+  if (employee.driver !== "claude") {
+    console.log(`[runner] "${employee.driver}" 드라이버는 아직 수정 요청(세션 이어가기)을 지원하지 않습니다`);
+    send({ type: "job_status", ticketId: ticket.id, status: "failed" });
+    return;
+  }
+  return runClaudeReviseDriver(ticket, employee, message, send);
+}
+
+function runQueueItem(item: QueueItem): Promise<void> {
+  return item.kind === "revise" ? runReviseJob(item.ticket, item.message) : runJob(item.ticket);
 }
 
 // 팀장이 create_planning_doc으로 위임하거나(최초) 사람이 수정 요청을 남기면(티키타카) 서버가
@@ -245,10 +274,12 @@ async function handleCheckDriverStatus(requestId: string) {
 
 function drain() {
   while (active < MAX_CONCURRENT && queue.length > 0) {
-    const ticket = queue.shift()!;
+    const item = queue.shift()!;
+    const { ticket } = item;
     active++;
-    console.log(`[runner] starting ${ticket.id} (${ticket.project}) - active=${active}, queued=${queue.length}`);
-    runJob(ticket)
+    const label = item.kind === "revise" ? `${ticket.id} (수정요청)` : `${ticket.id} (${ticket.project})`;
+    console.log(`[runner] starting ${label} - active=${active}, queued=${queue.length}`);
+    runQueueItem(item)
       .catch((err) => {
         console.error(`[runner] job ${ticket.id} failed`, err);
         // 드라이버가 예외로 죽으면(예: worktree 생성 실패) 티켓 상태를 아무도 안 바꿔서
@@ -340,7 +371,10 @@ function connect() {
   ws.on("message", (raw) => {
     const event = JSON.parse(raw.toString()) as ServerToRunnerEvent;
     if (event.type === "job_assign") {
-      queue.push(event.ticket);
+      queue.push({ kind: "normal", ticket: event.ticket });
+      drain();
+    } else if (event.type === "ticket_revise") {
+      queue.push({ kind: "revise", ticket: event.ticket, message: event.message });
       drain();
     } else if (event.type === "invoke_manager") {
       handleInvokeManager(event.requestId, event.teamId, event.message);

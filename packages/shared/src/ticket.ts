@@ -29,6 +29,12 @@ export interface Ticket {
   qaCycles: number;
   // QA가 남긴 가장 최근 반려 사유.
   qaNote: string | null;
+  // 직원 세션의 최종 보고 텍스트. 커밋을 했든 안 했든 항상 채워진다 - 검수 화면에서 raw 로그
+  // 대신 바로 보여준다.
+  resultText: string | null;
+  // 이 티켓 브랜치의 실제 커밋 요약. null이면 아직 계산 전(진행 중), 빈 커밋이면 그 사실이
+  // 문자열로 명시된다 - 승인 전에 "정말 반영할 코드가 있는지" 사람이 확인할 수 있게 한다.
+  diffSummary: string | null;
 }
 
 export const TICKET_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
