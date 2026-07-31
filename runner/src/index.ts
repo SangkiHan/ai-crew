@@ -10,6 +10,7 @@ import { runGeminiDriver } from "./drivers/gemini.js";
 import { runCodexDriver } from "./drivers/codex.js";
 import { runMock } from "./drivers/mock.js";
 import { invokeManager } from "./manager/invoke.js";
+import { clearSessionId } from "./manager/session.js";
 import { runPlanningDoc } from "./planning/dispatch.js";
 import { createProject } from "./projects/create.js";
 import { runConsult } from "./consult/run.js";
@@ -202,6 +203,22 @@ async function handleConsultEmployeeRequest(event: {
   });
 }
 
+// 웹 UI의 "세션 종료" 버튼이 서버를 거쳐 여기로 보낸다. 이 팀의 --resume 대상을 지워서,
+// 다음 팀장 호출이 완전히 새 세션으로 시작하게 한다.
+async function handleEndSessionRequest(event: { requestId: string; teamId: string }) {
+  try {
+    await clearSessionId(event.teamId);
+    send({ type: "end_session_result", requestId: event.requestId, success: true });
+  } catch (err) {
+    send({
+      type: "end_session_result",
+      requestId: event.requestId,
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 const DRIVER_BINARIES: Record<string, string> = { claude: "claude", gemini: "gemini", codex: "codex" };
 
 // 실행파일 이름으로 --version을 돌려본다. cross-spawn을 쓰는 이유: Windows에서 claude/gemini/codex는
@@ -348,6 +365,8 @@ function connect() {
       handleCreateProjectRequest(event);
     } else if (event.type === "consult_employee_request") {
       handleConsultEmployeeRequest(event);
+    } else if (event.type === "end_session_request") {
+      handleEndSessionRequest(event);
     }
   });
 

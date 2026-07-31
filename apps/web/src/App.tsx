@@ -4,6 +4,7 @@ import { DetailPanel } from "./DetailPanel.js";
 import { ChatBar } from "./ChatBar.js";
 import { EmployeeManager } from "./EmployeeManager.js";
 import { PlanningDocPanel } from "./PlanningDocPanel.js";
+import { ChatSessionsPanel } from "./ChatSessionsPanel.js";
 import { TeamProjectsManager } from "./TeamProjectsManager.js";
 import { TeamSwitcher } from "./TeamSwitcher.js";
 import { useStore } from "./store.js";
@@ -20,6 +21,7 @@ export function App() {
   const [managingEmployees, setManagingEmployees] = useState(false);
   const [managingProjects, setManagingProjects] = useState(false);
   const [showPlanningDocs, setShowPlanningDocs] = useState(false);
+  const [showPastSessions, setShowPastSessions] = useState(false);
 
   useUiSocket();
 
@@ -64,7 +66,11 @@ export function App() {
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <aside className="w-96 shrink-0 border-r border-slate-800">
           {selectedTeamId && (
-            <ChatBar teamId={selectedTeamId} onOpenPlanningDocs={() => setShowPlanningDocs(true)} />
+            <ChatBar
+              teamId={selectedTeamId}
+              onOpenPlanningDocs={() => setShowPlanningDocs(true)}
+              onOpenPastSessions={() => setShowPastSessions(true)}
+            />
           )}
         </aside>
         <main className="min-w-0 flex-1">
@@ -82,6 +88,9 @@ export function App() {
       )}
       {showPlanningDocs && selectedTeamId && (
         <PlanningDocPanel teamId={selectedTeamId} onClose={() => setShowPlanningDocs(false)} />
+      )}
+      {showPastSessions && selectedTeamId && (
+        <ChatSessionsPanel teamId={selectedTeamId} onClose={() => setShowPastSessions(false)} />
       )}
     </div>
   );

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { AgentConfig, ChatImage, Employee, PlanningDoc, ServerToUiEvent, Team, Ticket } from "@ai-crew/shared";
-import { sendChatMessage } from "./lib/api.js";
+import { endSession, fetchChatMessages, sendChatMessage } from "./lib/api.js";
 
 export interface LogLine {
   line: string;
@@ -27,6 +27,8 @@ interface StoreState {
   // 팀마다 팀장 대화(세션)와 바쁨 상태가 분리된다 - teamId로 구분해서 들고 있는다.
   managerStatusByTeam: Record<string, "idle" | "busy">;
   chatMessagesByTeam: Record<string, ChatMessage[]>;
+  // 새로고침해도 다시 안 불러오도록, 이미 서버 기록을 불러온 팀은 표시해둔다.
+  chatHistoryLoadedTeamIds: Set<string>;
   planningDocsByTeam: Record<string, PlanningDoc[]>;
   selectedNodeId: string | null;
 
@@ -45,6 +47,8 @@ interface StoreState {
     imagePreviewUrls?: string[]
   ) => Promise<void>;
   handleServerEvent: (event: ServerToUiEvent) => void;
+  loadChatHistory: (teamId: string) => Promise<void>;
+  endSessionForTeam: (teamId: string) => Promise<void>;
 
   employeesForTeam: (teamId: string) => Employee[];
   ticketsForRole: (role: string) => Ticket[];
@@ -62,6 +66,7 @@ export const useStore = create<StoreState>((set, get) => ({
   logsByTicket: {},
   managerStatusByTeam: {},
   chatMessagesByTeam: {},
+  chatHistoryLoadedTeamIds: new Set(),
   planningDocsByTeam: {},
   selectedNodeId: null,
 
@@ -158,6 +163,26 @@ export const useStore = create<StoreState>((set, get) => ({
         return { planningDocsByTeam: { ...s.planningDocsByTeam, [event.doc.teamId]: next } };
       });
     }
+  },
+
+  loadChatHistory: async (teamId) => {
+    if (get().chatHistoryLoadedTeamIds.has(teamId)) return; // 이미 불러온 팀 - 다시 안 불러온다
+    const stored = await fetchChatMessages(teamId);
+    set((s) => ({
+      chatMessagesByTeam: {
+        ...s.chatMessagesByTeam,
+        [teamId]: stored.map((m) => ({ id: m.id, role: m.role, text: m.text })),
+      },
+      chatHistoryLoadedTeamIds: new Set(s.chatHistoryLoadedTeamIds).add(teamId),
+    }));
+  },
+
+  endSessionForTeam: async (teamId) => {
+    await endSession(teamId);
+    set((s) => ({
+      chatMessagesByTeam: { ...s.chatMessagesByTeam, [teamId]: [] },
+      managerStatusByTeam: { ...s.managerStatusByTeam, [teamId]: "idle" },
+    }));
   },
 
   employeesForTeam: (teamId) => get().employees.filter((e) => e.teamId === teamId),

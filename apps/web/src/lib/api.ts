@@ -51,6 +51,43 @@ export function sendChatMessage(
   }).then((res) => json<{ requestId: string }>(res));
 }
 
+export interface StoredChatMessage {
+  id: string;
+  teamId: string;
+  role: "user" | "manager";
+  text: string;
+  createdAt: string;
+}
+
+export function fetchChatMessages(teamId: string): Promise<StoredChatMessage[]> {
+  return fetch(`/api/chat/messages?teamId=${encodeURIComponent(teamId)}`).then((res) =>
+    json<StoredChatMessage[]>(res)
+  );
+}
+
+export interface ChatSessionSummary {
+  id: string;
+  teamId: string;
+  startedAt: string;
+  endedAt: string | null;
+  messageCount: number;
+}
+
+export function fetchChatSessions(teamId: string): Promise<ChatSessionSummary[]> {
+  return fetch(`/api/chat/sessions?teamId=${encodeURIComponent(teamId)}`).then((res) =>
+    json<ChatSessionSummary[]>(res)
+  );
+}
+
+export function fetchSessionMessages(sessionId: string): Promise<StoredChatMessage[]> {
+  return fetch(`/api/chat/sessions/${sessionId}/messages`).then((res) => json<StoredChatMessage[]>(res));
+}
+
+// "세션 종료" - 팀장의 --resume 대상 세션과 화면 대화 기록을 둘 다 지워서 완전히 새로 시작한다.
+export function endSession(teamId: string): Promise<{ ok: true }> {
+  return fetch(`/api/teams/${teamId}/end-session`, { method: "POST" }).then((res) => json<{ ok: true }>(res));
+}
+
 export function fetchPlanningDocs(teamId: string): Promise<PlanningDoc[]> {
   return fetch(`/api/planning-docs?teamId=${encodeURIComponent(teamId)}`).then((res) =>
     json<PlanningDoc[]>(res)
