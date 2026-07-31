@@ -12,6 +12,7 @@ import { registerTeamRoutes } from "./routes/teams.js";
 import { registerPlanningDocRoutes } from "./routes/planning-docs.js";
 import { registerMemoryRoutes } from "./routes/memory.js";
 import { registerProjectRoutes } from "./routes/projects.js";
+import { registerConsultRoutes } from "./routes/consult.js";
 import { ensureDefaultTeamAssigned } from "./teams/store.js";
 import { registerUiWs } from "./ws/ui.js";
 import { registerRunnerWs } from "./ws/runner.js";
@@ -39,7 +40,8 @@ async function ensureDefaultTeamAssignedWithRetry(app: import("fastify").Fastify
 }
 
 async function main() {
-  const app = Fastify({ logger: true });
+  // 기본 1MB로는 채팅 이미지 첨부(base64)가 바로 걸린다 - 여유 있게 늘려둔다.
+  const app = Fastify({ logger: true, bodyLimit: 25 * 1024 * 1024 });
 
   await app.register(websocketPlugin);
 
@@ -55,6 +57,7 @@ async function main() {
   registerPlanningDocRoutes(app);
   registerMemoryRoutes(app);
   registerProjectRoutes(app);
+  registerConsultRoutes(app);
   registerUiWs(app);
   registerRunnerWs(app);
 

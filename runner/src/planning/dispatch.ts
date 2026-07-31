@@ -1,10 +1,34 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Employee, RunnerToServerEvent } from "@ai-crew/shared";
 import { runClaudeHeadless } from "../claude/headless.js";
 import { buildPlanningPrompt } from "../employees/prompt.js";
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = join(__dirname, "..", "..", ".."); // planning -> src -> runner -> repo root
+const PLANNING_MCP_SERVER_ENTRY =
+  process.env.PLANNING_MCP_SERVER_ENTRY ?? join(REPO_ROOT, "apps", "server", "dist", "mcp", "planning-server.js");
+const AI_CREW_SERVER_URL = process.env.AI_CREW_SERVER_URL ?? "http://localhost:8080";
 const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT ?? join(homedir(), "Desktop", "Project");
+
+const PLANNING_MCP_SERVER_NAME = "ai-crew-planning-tools";
+const PLANNING_TOOL_NAMES = ["list_projects", "list_employees", "ask_employee"].map(
+  (tool) => `mcp__${PLANNING_MCP_SERVER_NAME}__${tool}`
+);
+
+function buildPlanningMcpConfig(teamId: string): string {
+  return JSON.stringify({
+    mcpServers: {
+      [PLANNING_MCP_SERVER_NAME]: {
+        type: "stdio",
+        command: "node",
+        args: [PLANNING_MCP_SERVER_ENTRY],
+        env: { AI_CREW_SERVER_URL, WORKSPACE_ROOT, TEAM_ID: teamId },
+      },
+    },
+  });
+}
 
 // 기획서 작성은 git worktree가 필요 없다 (코드를 안 건드리므로) - WORKSPACE_ROOT를 cwd로 두고
 // 필요하면 Read/Grep/Glob으로 기존 프로젝트를 참고만 하게 한다. 결과 텍스트 자체가 기획서다.
@@ -43,11 +67,12 @@ export async function runPlanningDoc(
     const result = await runClaudeHeadless({
       message: fullMessage,
       systemPrompt: buildPlanningPrompt(employee.taskDescription),
-      allowedTools: ["Read", "Grep", "Glob"],
+      allowedTools: ["Read", "Grep", "Glob", ...PLANNING_TOOL_NAMES],
       permissionMode: "acceptEdits",
       cwd: WORKSPACE_ROOT,
       model: employee.model,
       resumeSessionId,
+      mcpConfigJson: buildPlanningMcpConfig(employee.teamId),
       onEvent: (line) => send({ type: "planning_doc_log", planningDocId, line, ts: now() }),
     });
 
