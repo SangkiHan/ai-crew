@@ -27,7 +27,17 @@ function TeamLabelNode({ data }: { data: TeamLabelData }) {
   );
 }
 
-const nodeTypes = { agent: AgentNode, teamLabel: TeamLabelNode };
+interface TeamBoxData {
+  teamId: string;
+  [key: string]: unknown;
+}
+
+// 팀 클러스터 뒤에 깔리는 테두리 박스 - 라벨/팀장/직원 노드보다 먼저 배열에 넣어서 아래에 깔리게 한다.
+function TeamBoxNode() {
+  return <div className="h-full w-full rounded-2xl border border-slate-700/70 bg-slate-800/10" />;
+}
+
+const nodeTypes = { agent: AgentNode, teamLabel: TeamLabelNode, teamBox: TeamBoxNode };
 
 const DRIVER_LABEL: Record<string, string> = {
   claude: "Claude Code",
@@ -60,15 +70,18 @@ export function OrgChart() {
   const setSelectedTeamId = useStore((s) => s.setSelectedTeamId);
 
   const manager = agents.find((a) => a.id === "manager");
-  const reactFlowRef = useRef<ReactFlowInstance<Node<AgentNodeData | TeamLabelData>, Edge> | null>(null);
+  const reactFlowRef = useRef<ReactFlowInstance<Node<AgentNodeData | TeamLabelData | TeamBoxData>, Edge> | null>(
+    null
+  );
 
   const { nodes, edges } = useMemo(() => {
     const statusForRole = useStore.getState().statusForRole;
-    const nodes: Node<AgentNodeData | TeamLabelData>[] = [];
+    const nodes: Node<AgentNodeData | TeamLabelData | TeamBoxData>[] = [];
     const edges: Edge[] = [];
 
     const spacing = 220;
     const clusterGap = 160;
+    const boxPaddingX = 50;
     let cursorX = 0;
 
     teams.forEach((team) => {
@@ -76,6 +89,17 @@ export function OrgChart() {
       const clusterWidth = Math.max(teamEmployees.length, 1) * spacing;
       const managerX = cursorX + clusterWidth / 2 - spacing / 2;
       const managerStatus = managerStatusByTeam[team.id] === "busy" ? "busy" : "idle";
+
+      // 팀 전체를 감싸는 테두리 박스 - 다른 노드보다 먼저 넣어서 뒤에 깔리게 한다.
+      nodes.push({
+        id: `team-box-${team.id}`,
+        type: "teamBox",
+        position: { x: cursorX - boxPaddingX, y: -110 },
+        data: { teamId: team.id },
+        style: { width: clusterWidth + boxPaddingX * 2, height: 440, zIndex: -1 },
+        draggable: false,
+        selectable: false,
+      });
 
       nodes.push({
         id: `team-label-${team.id}`,
