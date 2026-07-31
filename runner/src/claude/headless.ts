@@ -28,7 +28,13 @@ export interface HeadlessRunResult {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function summarizeEvent(event: any): string | null {
   if (event.type === "system" && event.subtype === "init") {
-    return `[claude] 세션 시작 (model: ${event.model ?? "?"})`;
+    // mcp_servers 연결 상태를 그대로 보여준다 - "MCP 툴을 하나도 못 씀" 증상이 재현될 때
+    // tool_use 로그가 없는 것만으로는 "MCP가 안 붙었다"와 "붙었는데 안 썼다"를 구분 못 한다.
+    // 이 줄이 있으면 바로 확인 가능하다.
+    const mcp = Array.isArray(event.mcp_servers)
+      ? event.mcp_servers.map((s: { name: string; status: string }) => `${s.name}=${s.status}`).join(", ")
+      : "(정보 없음)";
+    return `[claude] 세션 시작 (model: ${event.model ?? "?"}, mcp: ${mcp})`;
   }
   if (event.type === "assistant" && Array.isArray(event.message?.content)) {
     const lines: string[] = [];
