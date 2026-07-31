@@ -1,5 +1,5 @@
 import spawn from "cross-spawn";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -74,6 +74,14 @@ export async function runClaudeHeadless(opts: HeadlessRunOptions): Promise<Headl
   const tempDir = await mkdtemp(join(tmpdir(), "ai-crew-"));
   const systemPromptFile = join(tempDir, "system-prompt.txt");
   await writeFile(systemPromptFile, opts.systemPrompt, "utf-8");
+  // 실제로 파일에 뭐가 들어갔는지 다시 읽어서 바이트 수를 확인한다 - "시스템 프롬프트가
+  // 하나도 안 먹힌 것 같다" 증상이 재현될 때, 애초에 쓰기부터 잘못됐는지(내용이 비어있는지)
+  // 아니면 claude가 이 파일을 못 읽는 건지 구분하기 위한 마지막 단서.
+  const writtenSystemPrompt = await readFile(systemPromptFile, "utf-8");
+  opts.onEvent?.(
+    `[claude] 시스템 프롬프트 파일 작성: ${systemPromptFile} (${writtenSystemPrompt.length}자, ` +
+      `원본 ${opts.systemPrompt.length}자)`
+  );
 
   const args = [
     "-p",
@@ -97,6 +105,7 @@ export async function runClaudeHeadless(opts: HeadlessRunOptions): Promise<Headl
   if (opts.mcpConfigJson) {
     const mcpConfigFile = join(tempDir, "mcp-config.json");
     await writeFile(mcpConfigFile, opts.mcpConfigJson, "utf-8");
+    opts.onEvent?.(`[claude] mcp-config 파일 작성: ${mcpConfigFile} (${opts.mcpConfigJson.length}자)`);
     args.push("--mcp-config", mcpConfigFile);
   }
   if (opts.resumeSessionId) {
@@ -106,6 +115,12 @@ export async function runClaudeHeadless(opts: HeadlessRunOptions): Promise<Headl
   const cleanupTempDir = () => {
     rm(tempDir, { recursive: true, force: true }).catch(() => {});
   };
+
+  // 실제로 무엇을 넘기는지 그대로 남긴다 (메시지 본문만 제외 - 이미 정상 인식되는 걸로 확인됐고
+  // 너무 길 수 있음). "--output-format"/"--append-system-prompt-file" 같은 플래그가 정말
+  // 배열에 들어있는지, 순서가 이상하지는 않은지 눈으로 바로 확인하기 위한 마지막 단서.
+  const argsForLog = args.map((a, i) => (i === 1 ? "<message>" : a));
+  opts.onEvent?.(`[claude] 실행 인자: ${JSON.stringify(argsForLog)}`);
 
   return new Promise((resolve, reject) => {
     // stdin을 열어둔 채(기본값 pipe) 아무것도 안 쓰고 안 닫으면, claude가 몇 초간 stdin을
