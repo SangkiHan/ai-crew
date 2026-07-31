@@ -102,14 +102,22 @@ async function appendImagePaths(teamId: string, message: string, images?: ChatIm
 }
 
 // 브라우저 채팅바 -> 서버 -> 여기로 온다. 티켓 큐와는 별개 경로 (동시 실행 수 제한에 안 걸림).
+// UI가 WS 이벤트를 놓치더라도(네트워크 끊김, 탭 백그라운드 등) 여기(러너 콘솔)에는 항상 전체
+// 기록이 남는다 - "답변이 안 보이는데 뭐가 문제인지" 확인할 때는 이 터미널을 스크롤해서 보면 된다.
 async function handleInvokeManager(requestId: string, teamId: string, message: string, images?: ChatImage[]) {
+  console.log(`[runner] manager 호출 시작 (team=${teamId}, requestId=${requestId})`);
   try {
     const finalMessage = await appendImagePaths(teamId, message, images);
-    const result = await invokeManager(teamId, finalMessage, (line) =>
-      send({ type: "manager_log", teamId, requestId, line, ts: new Date().toISOString() })
+    const result = await invokeManager(teamId, finalMessage, (line) => {
+      console.log(`[manager:${teamId}] ${line}`);
+      send({ type: "manager_log", teamId, requestId, line, ts: new Date().toISOString() });
+    });
+    console.log(
+      `[runner] manager 호출 종료 (team=${teamId}, requestId=${requestId}, success=${result.success}): ${result.resultText}`
     );
     send({ type: "manager_result", teamId, requestId, resultText: result.resultText, success: result.success });
   } catch (err) {
+    console.error(`[runner] manager 호출 실패 (team=${teamId}, requestId=${requestId})`, err);
     send({
       type: "manager_result",
       teamId,
