@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url";
 import { loadAgentDefinition } from "../agents/load.js";
 import { runClaudeHeadless } from "../claude/headless.js";
 import { fetchTeams } from "../employees/api.js";
-import { projectPath } from "../workspace.js";
 import { readSessionId, writeSessionId } from "./session.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -52,24 +51,18 @@ function buildMcpConfig(teamId: string): string {
   });
 }
 
-// 팀에 등록된 담당 프로젝트 목록을 시스템 프롬프트에 그대로 박아 넣고(list_projects MCP 툴이
-// 연결 문제 등으로 안 붙어도 팀장이 자기 담당 프로젝트를 확실히 알 수 있는 이중 안전장치),
-// 동시에 그 프로젝트들의 실제 절대경로를 --add-dir로 열어줄 목록도 함께 계산한다. 사용자 결정:
-// 프론트+백엔드처럼 여러 프로젝트에 걸친 요청을 받으면 팀장이 직접 양쪽 실제 코드를 읽고 API
-// 계약(필드명/타입/엔드포인트)을 설계해서 두 티켓에 동일하게 못 박아줄 수 있어야 한다 - 순서대로
-// (백엔드 먼저 완료 후 프론트) 시키면 시간이 배로 걸리므로, 대신 팀장이 미리 설계하고 양쪽에
-// 동시에 위임하는 쪽을 택했다.
-async function buildProjectsContext(teamId: string): Promise<{ note: string; addDirs: string[] }> {
+// 팀에 등록된 담당 프로젝트 목록을 시스템 프롬프트에 그대로 박아 넣는다. list_projects MCP
+// 툴이 (연결 문제 등으로) 안 붙어도, 팀장이 자기 담당 프로젝트가 뭔지는 확실히 알 수 있게 하는
+// 이중 안전장치 - 정적 텍스트라 MCP 연결 여부와 무관하게 항상 전달된다.
+async function buildProjectsNote(teamId: string): Promise<string> {
   try {
     const teams = await fetchTeams();
     const team = teams.find((t) => t.id === teamId);
-    if (!team || team.projects.length === 0) return { note: "", addDirs: [] };
+    if (!team || team.projects.length === 0) return "";
     const list = team.projects.map((p) => `- ${p}`).join("\n");
-    const note = `\n\n## 이 팀이 담당하는 프로젝트\n(list_projects로 다시 찾을 필요 없이, 아래 목록을 우선 신뢰하세요)\n${list}`;
-    const addDirs = team.projects.map((p) => projectPath(p));
-    return { note, addDirs };
+    return `\n\n## 이 팀이 담당하는 프로젝트\n(list_projects로 다시 찾을 필요 없이, 아래 목록을 우선 신뢰하세요)\n${list}`;
   } catch {
-    return { note: "", addDirs: [] }; // 서버 조회 실패해도 팀장 호출 자체를 막지는 않는다.
+    return ""; // 서버 조회 실패해도 팀장 호출 자체를 막지는 않는다.
   }
 }
 
@@ -83,7 +76,7 @@ export async function invokeManager(
 ): Promise<ManagerResult> {
   const agent = await loadAgentDefinition(AGENT_DEFINITION_PATH);
   const previousSessionId = await readSessionId(teamId);
-  const { note: projectsNote, addDirs } = await buildProjectsContext(teamId);
+  const projectsNote = await buildProjectsNote(teamId);
 
   const result = await runClaudeHeadless({
     message,
@@ -94,7 +87,6 @@ export async function invokeManager(
     model: agent.model,
     resumeSessionId: previousSessionId ?? undefined,
     mcpConfigJson: buildMcpConfig(teamId),
-    addDirs,
     onEvent,
   });
 
