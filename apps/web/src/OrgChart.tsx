@@ -62,7 +62,7 @@ export function OrgChart() {
   const teams = useStore((s) => s.teams);
   const employees = useStore((s) => s.employees);
   const managerStatusByTeam = useStore((s) => s.managerStatusByTeam);
-  // statusForRole 자체는 store 안에서 안정적인 함수 참조라 이걸 구독해서는 tickets가
+  // statusForEmployee 자체는 store 안에서 안정적인 함수 참조라 이걸 구독해서는 tickets가
   // 바뀌어도 리렌더링되지 않는다. tickets 객체를 직접 구독해 리렌더링을 트리거하고,
   // 계산은 getState()로 매번 새로 한다.
   const tickets = useStore((s) => s.tickets);
@@ -75,7 +75,7 @@ export function OrgChart() {
   );
 
   const { nodes, edges } = useMemo(() => {
-    const statusForRole = useStore.getState().statusForRole;
+    const statusForEmployee = useStore.getState().statusForEmployee;
     const nodes: Node<AgentNodeData | TeamLabelData | TeamBoxData>[] = [];
     const edges: Edge[] = [];
 
@@ -134,7 +134,7 @@ export function OrgChart() {
           data: {
             label: employee.name,
             subtitle: `${DRIVER_LABEL[employee.driver] ?? employee.driver}${employee.model ? ` · ${employee.model}` : ""}`,
-            status: statusForRole(employee.name),
+            status: statusForEmployee(employee),
             teamId: team.id,
           },
           draggable: false,
@@ -143,7 +143,7 @@ export function OrgChart() {
           id: `manager-${team.id}-${employee.id}`,
           source: `manager-${team.id}`,
           target: employee.id,
-          animated: statusForRole(employee.name) === "busy",
+          animated: statusForEmployee(employee) === "busy",
         });
       });
 

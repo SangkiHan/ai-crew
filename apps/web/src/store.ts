@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AgentConfig, Employee, PlanningDoc, ServerToUiEvent, Team, Ticket } from "@ai-crew/shared";
+import { isQaEmployee, type AgentConfig, type Employee, type PlanningDoc, type ServerToUiEvent, type Team, type Ticket } from "@ai-crew/shared";
 import { endSession, fetchChatMessages, sendChatMessage } from "./lib/api.js";
 
 export interface LogLine {
@@ -44,7 +44,7 @@ interface StoreState {
 
   employeesForTeam: (teamId: string) => Employee[];
   ticketsForRole: (role: string) => Ticket[];
-  statusForRole: (role: string) => "idle" | "waiting" | "busy" | "attention";
+  statusForEmployee: (employee: Employee) => "idle" | "waiting" | "busy" | "attention";
 }
 
 const MAX_LOG_LINES = 500;
@@ -200,11 +200,22 @@ export const useStore = create<StoreState>((set, get) => ({
 
   ticketsForRole: (role) => Object.values(get().tickets).filter((t) => t.role === role),
 
-  statusForRole: (role) => {
-    const tickets = get().ticketsForRole(role);
-    if (tickets.some((t) => t.status === "running" || t.status === "qa_review")) return "busy";
+  // 티켓의 role은 항상 "원래 담당 개발자"고, qa_review 동안에도 바뀌지 않는다 - QA 직원이
+  // 실제로 세션을 돌리는 동안에도 QA 직원의 role로는 매칭되는 티켓이 하나도 없어서 QA 노드에
+  // 파란불(작업중 표시)이 전혀 안 켜지는 문제가 있었다. QA 담당 직원이면 자기 팀에 qa_review
+  // 티켓이 있는지로 "지금 검증 중"을 따로 판단하고, 원래 개발자 쪽은 qa_review를 "내 작업"이
+  // 아니라 "결과 기다리는 중"으로 낮춰서 두 노드가 동시에 헷갈리게 busy로 안 뜨게 한다.
+  statusForEmployee: (employee) => {
+    const tickets = get().ticketsForRole(employee.name);
+    if (isQaEmployee(employee.taskDescription)) {
+      const teamTickets = Object.values(get().tickets).filter((t) => t.teamId === employee.teamId);
+      if (teamTickets.some((t) => t.status === "qa_review")) return "busy";
+    }
+    if (tickets.some((t) => t.status === "running")) return "busy";
     if (tickets.some((t) => t.status === "blocked" || t.status === "needs_approval")) return "attention";
-    if (tickets.some((t) => t.status === "queued" || t.status === "assigned")) return "waiting";
+    if (tickets.some((t) => t.status === "queued" || t.status === "assigned" || t.status === "qa_review")) {
+      return "waiting";
+    }
     return "idle";
   },
 }));

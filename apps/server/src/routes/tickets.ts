@@ -9,7 +9,12 @@ import {
 } from "../tickets/store.js";
 import { getEmployeeByName } from "../employees/store.js";
 import { getTeam } from "../teams/store.js";
-import { pushToAnyRunner, requestManagerInvocation, requestTicketRevise } from "../ws/runner.js";
+import {
+  notifyManagerOfTicketResult,
+  pushToAnyRunner,
+  requestManagerInvocation,
+  requestTicketRevise,
+} from "../ws/runner.js";
 import { broadcastToUi } from "../ws/ui.js";
 
 // 경로 구분자가 "/"든 "\"든(서버는 리눅스 컨테이너 안이라 윈도우 경로의 "\"를 node:path가
@@ -144,7 +149,13 @@ export function registerTicketRoutes(app: FastifyInstance) {
       });
       if (pass) {
         saveTicketMemory(ticket);
-      } else if (!escalated) {
+        // QA 통과 -> done도 직원이 review에 도달했을 때와 마찬가지로 "이미 끝난 일" 보고를
+        // 팀장에게 보내야 한다 - 이 경로(QA 있는 팀)에서는 여태 이 알림이 빠져있어서
+        // 사용자가 작업 완료를 전혀 통보받지 못하는 사고가 있었다.
+        notifyManagerOfTicketResult(ticket, "done");
+      } else if (escalated) {
+        notifyManagerOfTicketResult(ticket, "needs_approval");
+      } else {
         await pushToAnyRunner(ticket.id);
       }
       return ticket;
