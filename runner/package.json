@@ -4,10 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "pnpm --filter @ai-crew/shared build && tsx watch src/bootstrap.ts",
+    "predev": "pnpm --filter @ai-crew/shared build",
+    "dev": "tsx watch src/bootstrap.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/bootstrap.js",
-    "manager": "pnpm --filter @ai-crew/shared build && tsx src/manager/cli.ts"
+    "premanager": "pnpm --filter @ai-crew/shared build",
+    "manager": "tsx src/manager/cli.ts"
   },
   "dependencies": {
     "@ai-crew/shared": "workspace:*",
