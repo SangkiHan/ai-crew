@@ -142,9 +142,15 @@ export async function runClaudeHeadless(opts: HeadlessRunOptions): Promise<Headl
       `원본 ${opts.systemPrompt.length}자)`
   );
 
+  // 메시지(티켓 spec, 팀장 완료 알림 등)는 여러 줄일 수 있는데, 이걸 "-p <message>"처럼
+  // argv 위치 인자로 그대로 넘기면 윈도우에서 cross-spawn이 cmd.exe로 감쌀 때 인자 안의
+  // 개행이 명령어 경계로 오인되어 첫 줄 뒤가 통째로 잘려나가는 문제가 실제로 관측됐다
+  // (직원/팀장이 "본문이 없다"고 보고한 사고). --print(-p)는 위치 인자 없이 stdin으로
+  // 프롬프트를 줘도 되므로(--input-format text가 기본값), argv를 완전히 벗어나 stdin으로
+  // 넘긴다 - 개행/길이 제한이 있는 셸 인자 파싱 자체를 타지 않는다.
+  const message = escapeSlashCommand(opts.message);
   const args = [
     "-p",
-    escapeSlashCommand(opts.message),
     "--output-format",
     "stream-json",
     "--verbose",
@@ -175,20 +181,16 @@ export async function runClaudeHeadless(opts: HeadlessRunOptions): Promise<Headl
     rm(tempDir, { recursive: true, force: true }).catch(() => {});
   };
 
-  // 실제로 무엇을 넘기는지 그대로 남긴다 (메시지 본문만 제외 - 이미 정상 인식되는 걸로 확인됐고
-  // 너무 길 수 있음). "--output-format"/"--append-system-prompt-file" 같은 플래그가 정말
-  // 배열에 들어있는지, 순서가 이상하지는 않은지 눈으로 바로 확인하기 위한 마지막 단서.
-  const argsForLog = args.map((a, i) => (i === 1 ? "<message>" : a));
-  console.log(`[claude] 실행 인자: ${JSON.stringify(argsForLog)}`);
+  // 메시지는 더 이상 args에 없다(위에서 stdin으로 옮김) - 그대로 로그에 남겨도 안전하다.
+  console.log(`[claude] 실행 인자: ${JSON.stringify(args)}`);
+  console.log(`[claude] stdin으로 넘길 메시지 길이: ${message.length}자`);
 
   return new Promise((resolve, reject) => {
-    // stdin을 열어둔 채(기본값 pipe) 아무것도 안 쓰고 안 닫으면, claude가 몇 초간 stdin을
-    // 기다리다 포기하는 동작이 모든 호출에서 매번 관찰됐다("Warning: no stdin data received").
-    // 헤드리스 호출은 애초에 stdin으로 줄 게 없으니 처음부터 닫아서 이 대기/타이밍 자체를
-    // 없앤다 - claude가 내부적으로 MCP 서버를 자식 프로세스로 또 띄우는데, 윈도우에서 부모
-    // 프로세스의 stdio 상태가 애매하면 그 하위 스폰이 불안정해지는 걸로 추정된다.
-    const child = spawn("claude", args, { cwd: opts.cwd, stdio: ["ignore", "pipe", "pipe"] });
+    // 메시지를 stdin으로 쓰고 나면 반드시 end()해야 한다 - 열어둔 채로 두면 claude가 몇 초간
+    // 추가 입력을 기다리다 포기하는 동작이 관찰된 적이 있다("Warning: no stdin data received").
+    const child = spawn("claude", args, { cwd: opts.cwd, stdio: ["pipe", "pipe", "pipe"] });
     opts.onSpawn?.(child.pid);
+    child.stdin!.end(message, "utf-8");
 
     let buffer = "";
     let stderr = "";
