@@ -265,6 +265,37 @@ function drain() {
   }
 }
 
+// 터미널에서 직접 실행한 `claude --version`과, 이 러너 프로세스가 cross-spawn으로 resolve하는
+// "claude"가 실제로 같은 실행파일인지 확인하기 위한 1회성 진단. PATH에 여러 버전이 잡혀있으면
+// (nvm, 여러 node 설치본 등) 터미널과 spawn 경로가 서로 다른 걸 가리킬 수 있고, 그러면 오래된
+// 버전이 --append-system-prompt-file/--mcp-config(파일)/--output-format stream-json을 몰라서
+// 조용히 무시해버리는 문제로 이어질 수 있다 - 실제로 원인 불명의 "MCP 툴이 하나도 안 불림" 현상을
+// 겪은 뒤 추가함.
+function logClaudeDiagnostics() {
+  const versionCheck = spawn("claude", ["--version"]);
+  let versionOut = "";
+  versionCheck.stdout?.on("data", (c: Buffer) => (versionOut += c.toString()));
+  versionCheck.on("error", (err) => console.error(`[runner] claude --version 실행 실패: ${err.message}`));
+  versionCheck.on("close", () => {
+    const helpCheck = spawn("claude", ["--help"]);
+    let helpOut = "";
+    helpCheck.stdout?.on("data", (c: Buffer) => (helpOut += c.toString()));
+    helpCheck.on("close", () => {
+      const supportsFileFlag = helpOut.includes("append-system-prompt-file") || helpOut.includes("append-system-prompt[-file]");
+      console.log(
+        `[runner] claude 진단: version=${versionOut.trim() || "(확인 실패)"}, ` +
+          `--append-system-prompt-file 지원=${supportsFileFlag}`
+      );
+      if (!supportsFileFlag) {
+        console.log(
+          `[runner] 경고: 이 claude 실행파일은 --append-system-prompt-file을 모르는 것 같습니다. ` +
+            `"where claude"(윈도우)/"which -a claude"로 PATH에 다른 버전이 잡혀있는지 확인해보세요.`
+        );
+      }
+    });
+  });
+}
+
 function connect() {
   ws = new WebSocket(SERVER_WS_URL);
 
@@ -302,4 +333,5 @@ function connect() {
   });
 }
 
+logClaudeDiagnostics();
 connect();
