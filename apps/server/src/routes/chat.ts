@@ -1,5 +1,4 @@
 import type { FastifyInstance } from "fastify";
-import type { ChatImage } from "@ai-crew/shared";
 import {
   endActiveSession,
   getSessionMessages,
@@ -21,15 +20,15 @@ function buildPlanningMessage(message: string): string {
 }
 
 export function registerChatRoutes(app: FastifyInstance) {
-  app.post<{ Body: { teamId: string; message: string; mode?: "chat" | "planning"; images?: ChatImage[] } }>(
+  app.post<{ Body: { teamId: string; message: string; mode?: "chat" | "planning" } }>(
     "/api/chat",
     async (req, reply) => {
-      const { teamId, message, mode, images } = req.body;
+      const { teamId, message, mode } = req.body;
       if (!teamId) return reply.code(400).send({ error: "teamId is required" });
       if (!message?.trim()) return reply.code(400).send({ error: "message is required" });
 
       const finalMessage = mode === "planning" ? buildPlanningMessage(message) : message;
-      const result = requestManagerInvocation(teamId, finalMessage, images);
+      const result = requestManagerInvocation(teamId, finalMessage);
       if (!result.ok) {
         const status = result.reason === "busy" ? 409 : 503;
         const error =

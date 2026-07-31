@@ -1,4 +1,4 @@
-import type { AgentConfig, ChatImage, DriverStatus, Employee, PlanningDoc, Team, Ticket } from "@ai-crew/shared";
+import type { AgentConfig, DriverStatus, Employee, PlanningDoc, Team, Ticket } from "@ai-crew/shared";
 
 async function json<T>(res: Response): Promise<T> {
   const data = await res.json();
@@ -41,13 +41,12 @@ export function fetchTickets(): Promise<Ticket[]> {
 export function sendChatMessage(
   teamId: string,
   message: string,
-  mode?: "chat" | "planning",
-  images?: ChatImage[]
+  mode?: "chat" | "planning"
 ): Promise<{ requestId: string }> {
   return fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ teamId, message, mode, images }),
+    body: JSON.stringify({ teamId, message, mode }),
   }).then((res) => json<{ requestId: string }>(res));
 }
 

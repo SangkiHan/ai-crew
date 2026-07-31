@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
-import type { ChatImage, DriverStatus, PlanningDoc, RunnerToServerEvent, ServerToRunnerEvent } from "@ai-crew/shared";
+import type { DriverStatus, PlanningDoc, RunnerToServerEvent, ServerToRunnerEvent } from "@ai-crew/shared";
 import {
   ensureAssigned,
   findOrphaned,
@@ -168,8 +168,7 @@ export interface ManagerInvocationRejected {
 // (세션/워크트리 충돌 방지) - 다른 팀의 팀장은 독립적으로 동시에 호출될 수 있다.
 export function requestManagerInvocation(
   teamId: string,
-  message: string,
-  images?: ChatImage[]
+  message: string
 ): ManagerInvocationRequest | ManagerInvocationRejected {
   if (busyTeams.has(teamId)) return { ok: false, reason: "busy" };
   const socket = [...runnerSockets][0];
@@ -178,7 +177,7 @@ export function requestManagerInvocation(
   const requestId = crypto.randomUUID();
   busyTeams.add(teamId);
   broadcastToUi({ type: "manager_status", teamId, status: "busy" });
-  const event: ServerToRunnerEvent = { type: "invoke_manager", requestId, teamId, message, images };
+  const event: ServerToRunnerEvent = { type: "invoke_manager", requestId, teamId, message };
   socket.send(JSON.stringify(event));
   return { ok: true, requestId };
 }
