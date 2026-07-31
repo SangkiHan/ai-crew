@@ -71,7 +71,13 @@ export async function runClaudeDriver(
     systemPrompt,
     allowedTools: [...employee.allowedTools, ...EMPLOYEE_TOOL_NAMES],
     disallowedTools: toDisallowedBashPatterns(employee.requireApproval),
-    permissionMode: "acceptEdits",
+    // acceptEdits는 이름 그대로 "편집(기존 파일 수정)"만 자동 승인하고, 새 파일 생성(Write) 같은
+    // 동작은 비대화형 세션에서 프롬프트를 띄울 수 없어 조용히 거부되는 걸로 보인다 - 직원이
+    // "새 파일을 만들어야 하는데 비대화형 세션이라 쓰기 권한이 없다"고 스스로 보고한 사고가
+    // 실제로 있었다(사용자 확인 후 변경). bypassPermissions로 승인 절차 자체를 건너뛴다 -
+    // allowedTools/disallowedTools는 승인 여부와 무관한 별도의 하드 필터라 git push/rm 차단은
+    // 그대로 유지된다.
+    permissionMode: "bypassPermissions",
     cwd,
     model: employee.model,
     mcpConfigJson: buildEmployeeMcpConfig(ticket.id, employee.name, employee.teamId),
@@ -111,7 +117,7 @@ export async function runClaudeReviseDriver(
     systemPrompt: buildEmployeePrompt(employee.taskDescription),
     allowedTools: [...employee.allowedTools, ...EMPLOYEE_TOOL_NAMES],
     disallowedTools: toDisallowedBashPatterns(employee.requireApproval),
-    permissionMode: "acceptEdits",
+    permissionMode: "bypassPermissions",
     cwd,
     model: employee.model,
     resumeSessionId: ticket.sessionId ?? undefined,
@@ -144,7 +150,7 @@ export async function runClaudeQaReview(
     message,
     systemPrompt,
     allowedTools: ["Read", "Grep", "Glob", "Bash", ...QA_TOOL_NAMES],
-    permissionMode: "acceptEdits",
+    permissionMode: "bypassPermissions",
     cwd,
     model: qaEmployee.model,
     mcpConfigJson: buildQaMcpConfig(ticket.id),

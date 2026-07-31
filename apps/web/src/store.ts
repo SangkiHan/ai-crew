@@ -127,25 +127,45 @@ export const useStore = create<StoreState>((set, get) => ({
     } else if (event.type === "manager_status") {
       set((s) => ({ managerStatusByTeam: { ...s.managerStatusByTeam, [event.teamId]: event.status } }));
     } else if (event.type === "manager_log") {
-      set((s) => ({
-        chatMessagesByTeam: {
-          ...s.chatMessagesByTeam,
-          [event.teamId]: (s.chatMessagesByTeam[event.teamId] ?? []).map((m) =>
-            m.requestId === event.requestId ? { ...m, text: `${m.text}${m.text ? "\n" : ""}${event.line}` } : m
-          ),
-        },
-      }));
+      set((s) => {
+        const list = s.chatMessagesByTeam[event.teamId] ?? [];
+        const idx = list.findIndex((m) => m.requestId === event.requestId);
+        if (idx >= 0) {
+          const updated = [...list];
+          updated[idx] = { ...updated[idx], text: `${updated[idx].text}${updated[idx].text ? "\n" : ""}${event.line}` };
+          return { chatMessagesByTeam: { ...s.chatMessagesByTeam, [event.teamId]: updated } };
+        }
+        // 사용자가 채팅으로 직접 보낸 게 아니라 서버가 자동으로 깨운 팀장 호출(티켓 완료/블락
+        // 알림 등)이면, sendUserMessage가 미리 만들어두는 자리표시자 메시지가 없다 - 그래서
+        // 새로고침 전까지는 채팅창에 아예 안 나타났다. 여기서 새로 만들어서 바로 보이게 한다.
+        const newMsg: ChatMessage = {
+          id: crypto.randomUUID(),
+          role: "manager",
+          text: event.line,
+          requestId: event.requestId,
+          pending: true,
+        };
+        return { chatMessagesByTeam: { ...s.chatMessagesByTeam, [event.teamId]: [...list, newMsg] } };
+      });
     } else if (event.type === "manager_result") {
-      set((s) => ({
-        chatMessagesByTeam: {
-          ...s.chatMessagesByTeam,
-          [event.teamId]: (s.chatMessagesByTeam[event.teamId] ?? []).map((m) =>
-            m.requestId === event.requestId
-              ? { ...m, text: event.resultText || m.text, pending: false }
-              : m
-          ),
-        },
-      }));
+      set((s) => {
+        const list = s.chatMessagesByTeam[event.teamId] ?? [];
+        const idx = list.findIndex((m) => m.requestId === event.requestId);
+        if (idx >= 0) {
+          const updated = [...list];
+          updated[idx] = { ...updated[idx], text: event.resultText || updated[idx].text, pending: false };
+          return { chatMessagesByTeam: { ...s.chatMessagesByTeam, [event.teamId]: updated } };
+        }
+        // manager_log를 하나도 못 받고 바로 결과만 온 경우(짧은 자동 호출)도 같은 이유로 대비.
+        const newMsg: ChatMessage = {
+          id: crypto.randomUUID(),
+          role: "manager",
+          text: event.resultText,
+          requestId: event.requestId,
+          pending: false,
+        };
+        return { chatMessagesByTeam: { ...s.chatMessagesByTeam, [event.teamId]: [...list, newMsg] } };
+      });
     } else if (event.type === "planning_doc_updated") {
       set((s) => {
         const list = s.planningDocsByTeam[event.doc.teamId] ?? [];
