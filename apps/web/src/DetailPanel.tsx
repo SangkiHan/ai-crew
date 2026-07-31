@@ -56,9 +56,13 @@ function TicketSummary({ ticket }: { ticket: Ticket }) {
         </div>
       )}
       {ticket.resultText && (
-        <div className="mt-2 whitespace-pre-wrap border-t border-slate-700 pt-2 text-slate-200">
+        <div className="mt-2 border-t border-slate-700 pt-2">
           <div className="mb-1 text-[11px] uppercase tracking-wide text-slate-500">직원의 최종 보고</div>
-          {ticket.resultText}
+          {/* 보고가 길면 이 박스 자체를 스크롤한다 - 전에는 높이 제한이 없어서 내용이 길면
+              패널 바깥으로 잘려나가고(부모가 overflow-hidden) 스크롤도 안 돼 뒷부분을 못 봤다. */}
+          <div className="max-h-56 overflow-y-auto whitespace-pre-wrap pr-1 text-slate-200">
+            {ticket.resultText}
+          </div>
         </div>
       )}
     </div>
