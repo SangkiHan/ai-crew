@@ -21,7 +21,11 @@ export interface Ticket {
   status: TicketStatus;
   parentTicketId: string | null;
   sessionId: string | null;
-  worktreePath: string | null;
+  // 이 티켓이 실제로 작업된 프로젝트의 그 시점 브랜치 이름(작업 시작 시 캡처). 격리된 워크트리/
+  // 새 브랜치 없이 프로젝트 실제 폴더의 현재 브랜치에 직접 작업하므로, 참고용으로만 남긴다.
+  branch: string | null;
+  // 작업 시작 시점의 HEAD 커밋. diffSummary(실제 커밋 여부 확인)를 계산하는 기준점이다.
+  baseSha: string | null;
   createdAt: string;
   updatedAt: string;
   lastHeartbeatAt: string | null;
@@ -55,9 +59,4 @@ export const TICKET_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
 
 export function canTransition(from: TicketStatus, to: TicketStatus): boolean {
   return TICKET_TRANSITIONS[from].includes(to);
-}
-
-// 러너(워크트리 생성)와 서버(머지 요청) 양쪽에서 같은 브랜치명을 계산해야 해서 여기 하나로 둔다.
-export function ticketBranchName(ticketId: string): string {
-  return `ai-crew/${ticketId}`;
 }

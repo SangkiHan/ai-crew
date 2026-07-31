@@ -39,12 +39,12 @@ priority = 999
 }
 
 async function writeProjectMcpSettings(
-  worktreePath: string,
+  cwd: string,
   ticketId: string,
   employeeName: string,
   teamId: string
 ): Promise<void> {
-  const geminiDir = join(worktreePath, ".gemini");
+  const geminiDir = join(cwd, ".gemini");
   await mkdir(geminiDir, { recursive: true });
   const settings = {
     mcpServers: {
@@ -63,11 +63,11 @@ async function writeProjectMcpSettings(
 // 컨텍스트로 추가되는 표준 방식이라 여기에 직원 프롬프트를 쓴다 (CLAUDE.md와 같은 성격).
 // GEMINI.md와 .gemini/settings.json(호스트 절대경로 포함)은 절대 커밋되면 안 되므로
 // git의 로컬 전용 exclude에 등록해둔다 (프로젝트의 실제 .gitignore는 건드리지 않음).
-async function writeGeminiContextFile(worktreePath: string, systemPrompt: string): Promise<void> {
-  await writeFile(join(worktreePath, "GEMINI.md"), systemPrompt, "utf-8");
+async function writeGeminiContextFile(cwd: string, systemPrompt: string): Promise<void> {
+  await writeFile(join(cwd, "GEMINI.md"), systemPrompt, "utf-8");
   try {
-    const { stdout } = await execFileAsync("git", ["-C", worktreePath, "rev-parse", "--git-path", "info/exclude"]);
-    const excludePath = join(worktreePath, stdout.trim());
+    const { stdout } = await execFileAsync("git", ["-C", cwd, "rev-parse", "--git-path", "info/exclude"]);
+    const excludePath = join(cwd, stdout.trim());
     await appendFile(excludePath, "\nGEMINI.md\n.gemini/\n");
   } catch {
     // exclude 등록에 실패해도 작업 자체는 계속 진행한다 - 최선노력.
@@ -94,11 +94,11 @@ export async function runGeminiDriver(
   employee: Employee,
   send: (event: RunnerToServerEvent) => void
 ) {
-  const { worktreePath, message, systemPrompt } = await prepareEmployeeJob(ticket, employee, send);
+  const { cwd, message, systemPrompt } = await prepareEmployeeJob(ticket, employee, send);
   const now = () => new Date().toISOString();
 
-  await writeProjectMcpSettings(worktreePath, ticket.id, employee.name, employee.teamId);
-  await writeGeminiContextFile(worktreePath, systemPrompt);
+  await writeProjectMcpSettings(cwd, ticket.id, employee.name, employee.teamId);
+  await writeGeminiContextFile(cwd, systemPrompt);
   await writeBestEffortDenyPolicy(employee.requireApproval);
 
   const sessionId = randomUUID();
@@ -116,7 +116,7 @@ export async function runGeminiDriver(
   ];
 
   const success = await new Promise<boolean>((resolve) => {
-    const child = spawn("gemini", args, { cwd: worktreePath });
+    const child = spawn("gemini", args, { cwd });
 
     let buffer = "";
     let stderr = "";

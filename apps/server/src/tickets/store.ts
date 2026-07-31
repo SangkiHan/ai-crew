@@ -46,7 +46,8 @@ function toTicket(row: {
   status: string;
   parentTicketId: string | null;
   sessionId: string | null;
-  worktreePath: string | null;
+  branch: string | null;
+  baseSha: string | null;
   createdAt: Date;
   updatedAt: Date;
   lastHeartbeatAt: Date | null;
@@ -66,7 +67,8 @@ function toTicket(row: {
     status: row.status as TicketStatus,
     parentTicketId: row.parentTicketId,
     sessionId: row.sessionId,
-    worktreePath: row.worktreePath,
+    branch: row.branch,
+    baseSha: row.baseSha,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     lastHeartbeatAt: row.lastHeartbeatAt ? row.lastHeartbeatAt.toISOString() : null,
@@ -205,7 +207,7 @@ export async function recordHeartbeat(id: string): Promise<void> {
 
 export async function updateMeta(
   id: string,
-  meta: { worktreePath?: string; sessionId?: string; resultText?: string; diffSummary?: string }
+  meta: { branch?: string; baseSha?: string; sessionId?: string; resultText?: string; diffSummary?: string }
 ): Promise<Ticket> {
   return withTicketLock(id, async () => {
     const row = await prisma.ticket.update({ where: { id }, data: meta });

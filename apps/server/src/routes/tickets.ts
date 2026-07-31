@@ -1,5 +1,4 @@
 import type { FastifyInstance } from "fastify";
-import { ticketBranchName } from "@ai-crew/shared";
 import {
   applyQaVerdict,
   createTicket,
@@ -10,7 +9,7 @@ import {
 } from "../tickets/store.js";
 import { getEmployeeByName } from "../employees/store.js";
 import { getTeam } from "../teams/store.js";
-import { pushToAnyRunner, requestManagerInvocation, requestMerge, requestTicketRevise } from "../ws/runner.js";
+import { pushToAnyRunner, requestManagerInvocation, requestTicketRevise } from "../ws/runner.js";
 import { broadcastToUi } from "../ws/ui.js";
 
 // 경로 구분자가 "/"든 "\"든(서버는 리눅스 컨테이너 안이라 윈도우 경로의 "\"를 node:path가
@@ -71,8 +70,11 @@ export function registerTicketRoutes(app: FastifyInstance) {
     return ticket;
   });
 
-  // review -> done, needs_approval -> running. 지금은 사람이 UI에서 직접 누르는 경로만 있다
-  // (팀장이 review를 스스로 승인하는 MCP 툴은 아직 없음).
+  // needs_approval -> running 전용 경로다 (QA가 3회 넘게 반려해서 사람에게 계속할지 물어본
+  // 경우만 해당). review -> done은 이제 사람이 누를 필요 없이 자동으로 처리된다
+  // (ws/runner.ts의 autoApproveTicket) - 직원은 프로젝트 실제 폴더에서 직접 커밋하므로 승인
+  // 시점에 별도로 병합할 것도 없다. 그래도 이 엔드포인트 자체는 남겨둔다 - 러너가 잠깐
+  // 끊겨서 review 티켓이 자동 처리를 못 받고 멈춰있는 것 같은 예외 상황의 수동 복구용이다.
   app.post<{ Params: { id: string } }>("/api/tickets/:id/approve", async (req, reply) => {
     const ticket = await getTicket(req.params.id);
     if (!ticket) return reply.code(404).send({ error: "not found" });
@@ -80,12 +82,9 @@ export function registerTicketRoutes(app: FastifyInstance) {
     const to = wasReview ? "done" : ticket.status === "needs_approval" ? "running" : null;
     if (!to) return reply.code(400).send({ error: `cannot approve ticket in status ${ticket.status}` });
     const updated = await transitionTicket(ticket.id, to);
-    // review -> done 승인은 상태만 바꾸는 게 아니라 실제로 워크트리 브랜치를 메인에 머지해야
-    // 다른 티켓(예: blocked였다가 재개된 티켓)이 이 작업의 결과를 볼 수 있다.
-    if (wasReview && updated.worktreePath) {
-      requestMerge(updated.id, updated.project, ticketBranchName(updated.id), updated.worktreePath);
+    if (wasReview) {
       saveTicketMemory(updated);
-    } else if (!wasReview) {
+    } else {
       // needs_approval -> running: "queued"가 아니라서 store의 changed 리스너가 자동으로
       // 러너에 밀어주지 않는다 - 여기서 직접 밀어줘야 실제로 다시 실행된다.
       await pushToAnyRunner(updated.id);
@@ -93,10 +92,10 @@ export function registerTicketRoutes(app: FastifyInstance) {
     return updated;
   });
 
-  // 사람이 review 티켓을 보고 수정 요청("이 부분 고쳐줘")을 남긴다 - 새 워크트리로 처음부터
-  // 다시 시키는 게 아니라, 담당 직원의 기존 워크트리와 Claude Code 세션을 그대로 이어서
-  // (--resume) 수정사항만 반영한다 (기획서 티키타카와 같은 패턴). 반영이 끝나면 다시 review로
-  // 돌아온다 (review -> running -> review는 이미 허용된 전이).
+  // 사람이 review 티켓을 보고 수정 요청("이 부분 고쳐줘")을 남긴다 - 프로젝트 실제 폴더에서
+  // 담당 직원의 Claude Code 세션을 그대로 이어서(--resume) 수정사항만 반영한다 (기획서
+  // 티키타카와 같은 패턴). 반영이 끝나면 다시 review로 돌아온다
+  // (review -> running -> review는 이미 허용된 전이).
   app.post<{ Params: { id: string }; Body: { message: string } }>(
     "/api/tickets/:id/revise",
     async (req, reply) => {
@@ -143,11 +142,9 @@ export function registerTicketRoutes(app: FastifyInstance) {
             : `[QA] 반려 (${ticket.qaCycles}/3) - 담당 직원에게 다시 보냅니다: ${note ?? ""}`,
         ts: new Date().toISOString(),
       });
-      if (pass && ticket.worktreePath) {
-        // QA 통과 = done이므로, 승인 때와 마찬가지로 실제 워크트리 브랜치를 메인에 머지해야 한다.
-        requestMerge(ticket.id, ticket.project, ticketBranchName(ticket.id), ticket.worktreePath);
+      if (pass) {
         saveTicketMemory(ticket);
-      } else if (!pass && !escalated) {
+      } else if (!escalated) {
         await pushToAnyRunner(ticket.id);
       }
       return ticket;

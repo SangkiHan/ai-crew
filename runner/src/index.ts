@@ -14,8 +14,6 @@ import { clearSessionId } from "./manager/session.js";
 import { runPlanningDoc } from "./planning/dispatch.js";
 import { createProject } from "./projects/create.js";
 import { runConsult } from "./consult/run.js";
-import { deleteBranch, mergeBranch, removeWorktree } from "./worktree.js";
-import { projectPath } from "./workspace.js";
 
 const SERVER_WS_URL = process.env.SERVER_WS_URL ?? "ws://localhost:8080/ws/runner";
 const MAX_CONCURRENT = Number(process.env.RUNNER_MAX_CONCURRENT ?? 2);
@@ -146,30 +144,6 @@ async function handleInvokeManager(requestId: string, teamId: string, message: s
       requestId,
       resultText: err instanceof Error ? err.message : String(err),
       success: false,
-    });
-  }
-}
-
-// 사람이 review 티켓을 승인(done)하면 서버가 이걸 보낸다. 실제로 메인 브랜치에 머지하는 건
-// 호스트에서 git을 쓸 수 있는 여기(러너)뿐이다 - 서버는 컨테이너 안이라 프로젝트 폴더가 없다.
-async function handleMergeTicket(event: { ticketId: string; project: string; branch: string; worktreePath: string }) {
-  const repoPath = projectPath(event.project);
-  try {
-    await mergeBranch(repoPath, event.branch, `merge: ${event.branch} (ticket ${event.ticketId})`);
-    await removeWorktree(repoPath, event.worktreePath);
-    await deleteBranch(repoPath, event.branch);
-    send({
-      type: "merge_result",
-      ticketId: event.ticketId,
-      success: true,
-      message: `${event.branch}를 메인 브랜치에 머지하고 워크트리를 정리했습니다.`,
-    });
-  } catch (err) {
-    send({
-      type: "merge_result",
-      ticketId: event.ticketId,
-      success: false,
-      message: err instanceof Error ? err.message : String(err),
     });
   }
 }
@@ -378,8 +352,6 @@ function connect() {
       drain();
     } else if (event.type === "invoke_manager") {
       handleInvokeManager(event.requestId, event.teamId, event.message);
-    } else if (event.type === "merge_ticket") {
-      handleMergeTicket(event);
     } else if (event.type === "check_driver_status") {
       handleCheckDriverStatus(event.requestId);
     } else if (event.type === "planning_doc_assign") {

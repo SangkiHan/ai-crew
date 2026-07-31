@@ -61,7 +61,7 @@ export async function runCodexDriver(
   employee: Employee,
   send: (event: RunnerToServerEvent) => void
 ) {
-  const { worktreePath, message, systemPrompt } = await prepareEmployeeJob(ticket, employee, send);
+  const { cwd, message, systemPrompt } = await prepareEmployeeJob(ticket, employee, send);
   const now = () => new Date().toISOString();
 
   const EMPLOYEE_MCP_SERVER_ENTRY =
@@ -76,7 +76,7 @@ export async function runCodexDriver(
     fullPrompt,
     "--json",
     "-C",
-    worktreePath,
+    cwd,
     "-s",
     "workspace-write",
     "--skip-git-repo-check",

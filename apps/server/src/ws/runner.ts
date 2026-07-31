@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
-import { ticketBranchName, type DriverStatus, type PlanningDoc, type RunnerToServerEvent, type ServerToRunnerEvent, type Ticket } from "@ai-crew/shared";
+import type { DriverStatus, PlanningDoc, RunnerToServerEvent, ServerToRunnerEvent, Ticket } from "@ai-crew/shared";
 import {
   ensureAssigned,
   findOrphaned,
@@ -83,14 +83,15 @@ async function handleRunnerEvent(event: RunnerToServerEvent, app: FastifyInstanc
         // transitionTicket이 반환하는 티켓에는 resultText/diffSummary가 이미 반영돼 있다 -
         // 같은 티켓에 대한 락(withTicketLock)이 job_meta -> job_status 순서를 보장하므로,
         // 여기서 다시 조회할 필요 없이 이 반환값을 그대로 쓴다.
-        const updated = await transitionTicket(event.ticketId, "review");
-        notifyManagerOfTicketResult(updated, "review");
-        // 사용자 결정: 사람이 매번 UI에서 승인 버튼을 누를 필요 없이 곧바로 메인 브랜치에
-        // 커밋(머지)한다 - 검토는 팀장의 완료 보고(위 notifyManagerOfTicketResult)를 사용자가
-        // 직접 읽고 필요하면 후속 지시를 내리는 방식으로 한다. QA가 있는 팀은 이미 QA 통과 시
-        // 사람 승인 없이 자동 완료되므로(applyQaVerdict), 이건 QA 없는 팀에 같은 정책을 맞추는
-        // 것뿐이다.
-        await autoApproveTicket(updated);
+        //
+        // 사용자 결정: 사람이 매번 UI에서 승인 버튼을 누를 필요가 없다 - 직원이 프로젝트 실제
+        // 폴더의 현재 브랜치에 직접 커밋하므로, review는 "승인을 기다리는 관문"이 아니라
+        // 이미 끝난 작업을 곧장 done으로 넘기는 경유지일 뿐이다. 그래서 팀장에게 보내는 알림도
+        // done으로 넘긴 "뒤에" 과거형으로 보낸다 - "승인해달라"고 안내하면 실제 동작과
+        // 안 맞아서 팀장이 스스로 그 모순을 알아채고 엉뚱한 데(자기 소스코드)를 뒤지게 된다.
+        const reviewed = await transitionTicket(event.ticketId, "review");
+        const done = await autoApproveTicket(reviewed);
+        notifyManagerOfTicketResult(done, "done");
       }
     } else {
       const updated = await transitionTicket(event.ticketId, event.status);
@@ -107,7 +108,8 @@ async function handleRunnerEvent(event: RunnerToServerEvent, app: FastifyInstanc
     await recordHeartbeat(event.ticketId);
   } else if (event.type === "job_meta") {
     await updateMeta(event.ticketId, {
-      worktreePath: event.worktreePath,
+      branch: event.branch,
+      baseSha: event.baseSha,
       sessionId: event.sessionId,
       resultText: event.resultText,
       diffSummary: event.diffSummary,
@@ -135,13 +137,6 @@ async function handleRunnerEvent(event: RunnerToServerEvent, app: FastifyInstanc
       success: event.success,
     });
     broadcastToUi({ type: "manager_status", teamId: event.teamId, status: "idle" });
-  } else if (event.type === "merge_result") {
-    broadcastToUi({
-      type: "log_line",
-      ticketId: event.ticketId,
-      line: `[merge] ${event.success ? "성공" : "실패"}: ${event.message}`,
-      ts: new Date().toISOString(),
-    });
   } else if (event.type === "driver_status_result") {
     const resolve = pendingDriverStatusChecks.get(event.requestId);
     if (resolve) {
@@ -170,19 +165,24 @@ async function handleRunnerEvent(event: RunnerToServerEvent, app: FastifyInstanc
 }
 
 // 직원이 작업을 끝냈는데도(성공/실패 모두) 팀장한테 아무 보고가 안 가서 사용자가 채팅에서
-// 아무 결과도 못 보는 문제가 있었다 - 티켓 상세 화면을 직접 열어봐야만 알 수 있었다. review로
+// 아무 결과도 못 보는 문제가 있었다 - 티켓 상세 화면을 직접 열어봐야만 알 수 있었다. done으로
 // 넘어가거나 최종 실패했을 때 팀장을 깨워 직원의 최종 보고(resultText)와 변경사항 요약
 // (diffSummary)을 전달하고, 사용자에게 요약해서 알리도록 한다. 팀장이 이미 바쁘면(busyTeams)
 // requestManagerInvocation이 조용히 스킵한다 - blocked 알림(REST /block 경로)과 같은 한계다.
-function notifyManagerOfTicketResult(ticket: Ticket, outcome: "review" | "failed"): void {
+//
+// "done" 케이스는 반드시 autoApproveTicket이 끝난 뒤(과거형으로) 호출해야 한다 - 아직
+// 진행 중인 것처럼("검수를 요청했습니다") 안내하면서 정작 승인 버튼은 없고 이미 자동으로
+// 처리되는 모순이 생겨서, 팀장이 그 모순을 스스로 알아채고 자기 소스코드를 뒤지는
+// 엉뚱한 행동을 한 적이 있다 - 알림 문구는 항상 "이미 어떻게 됐다"만 말해야 한다.
+function notifyManagerOfTicketResult(ticket: Ticket, outcome: "done" | "failed"): void {
   const message =
-    outcome === "review"
-      ? `직원 "${ticket.role}"이 티켓 작업을 마치고 검수를 요청했습니다.\n\n` +
-        `- 티켓: ${ticket.title}\n- 프로젝트: ${ticket.project}\n` +
+    outcome === "done"
+      ? `직원 "${ticket.role}"이 티켓 작업을 완료했습니다. 사람 승인 절차 없이 자동으로 ` +
+        `프로젝트의 현재 브랜치에 이미 커밋되어 있습니다 (별도로 승인/거부/머지할 것이 없습니다).\n\n` +
+        `- 티켓: ${ticket.title}\n- 프로젝트: ${ticket.project}\n- 브랜치: ${ticket.branch ?? "(확인 안 됨)"}\n` +
         `- 변경사항: ${ticket.diffSummary ?? "(확인 중)"}\n\n` +
         `## 직원의 최종 보고\n${ticket.resultText ?? "(보고 없음)"}\n\n` +
-        `위 내용을 사용자에게 요약해서 전달하세요. 최종 승인/거부/수정 요청은 사용자가 UI에서 ` +
-        `직접 하므로 당신은 보고만 하면 됩니다.`
+        `위 내용을 사용자에게 요약해서 전달하세요. 이미 끝난 일이니 당신이 추가로 할 조치는 없습니다.`
       : `직원 "${ticket.role}"의 티켓 작업이 실패로 종료됐습니다.\n\n` +
         `- 티켓: ${ticket.title}\n- 프로젝트: ${ticket.project}\n\n` +
         `## 직원의 마지막 보고\n${ticket.resultText ?? "(보고 없음)"}\n\n` +
@@ -191,15 +191,13 @@ function notifyManagerOfTicketResult(ticket: Ticket, outcome: "review" | "failed
   requestManagerInvocation(ticket.teamId, message);
 }
 
-// review에 도달한 티켓을 사람 승인 없이 바로 done으로 넘기고 실제로 머지한다 - QA 통과 티켓이
-// 이미 이렇게 동작하는 것과 같은 정책이다(applyQaVerdict). 검토는 notifyManagerOfTicketResult로
-// 전달되는 완료 보고를 사람이 채팅에서 직접 읽는 방식으로 대체한다.
-async function autoApproveTicket(ticket: Ticket): Promise<void> {
+// review에 도달한 티켓을 사람 승인 없이 바로 done으로 넘긴다 - QA 통과 티켓이 이미 이렇게
+// 동작하는 것과 같은 정책이다(applyQaVerdict). 직원은 프로젝트 실제 폴더의 현재 브랜치에
+// 이미 직접 커밋했으므로(격리된 워크트리/새 브랜치가 없다) 여기서 별도로 병합할 것도 없다.
+async function autoApproveTicket(ticket: Ticket): Promise<Ticket> {
   const done = await transitionTicket(ticket.id, "done");
-  if (done.worktreePath) {
-    requestMerge(done.id, done.project, ticketBranchName(done.id), done.worktreePath);
-    saveTicketMemory(done);
-  }
+  saveTicketMemory(done);
+  return done;
 }
 
 export interface ManagerInvocationRequest {
@@ -229,14 +227,6 @@ export function requestManagerInvocation(
   return { ok: true, requestId };
 }
 
-// review 티켓이 done으로 승인되면 호출된다. 실제 git merge는 호스트(러너)에서만 가능하다.
-export function requestMerge(ticketId: string, project: string, branch: string, worktreePath: string): void {
-  const socket = [...runnerSockets][0];
-  if (!socket) return; // 러너가 없으면 조용히 스킵 - 사람이 나중에 수동으로 머지해야 함
-  const event: ServerToRunnerEvent = { type: "merge_ticket", ticketId, project, branch, worktreePath };
-  socket.send(JSON.stringify(event));
-}
-
 // 팀장이 create_planning_doc으로 위임하거나(최초), 사람이 수정 요청을 남기면(티키타카) 호출된다.
 // 실제 기획서 작성은 호스트(러너)에서 그 직원의 CLI 세션으로 진행된다(worktree/git 없이 텍스트만
 // 생성). resumeSessionId가 있으면 이전 초안과 같은 대화를 이어서 다듬는다.
@@ -254,8 +244,8 @@ export function requestPlanningDocJob(doc: PlanningDoc, message: string, resumeS
   socket.send(JSON.stringify(event));
 }
 
-// 사람이 review 티켓에 수정 요청을 남기면 호출된다. 새 티켓/새 워크트리가 아니라 그 티켓을
-// 작업했던 담당 직원의 기존 워크트리와 Claude Code 세션(sessionId)을 그대로 이어서(--resume)
+// 사람이 review 티켓에 수정 요청을 남기면 호출된다. 새 티켓이 아니라 프로젝트 실제 폴더에서
+// 그 티켓을 작업했던 담당 직원의 Claude Code 세션(sessionId)을 그대로 이어서(--resume)
 // 수정사항을 반영한다 - 기획서 티키타카 수정 요청과 같은 패턴이다.
 export function requestTicketRevise(ticket: Ticket, message: string): void {
   const socket = [...runnerSockets][0];

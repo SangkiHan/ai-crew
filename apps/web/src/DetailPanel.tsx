@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ticketBranchName, type Ticket, type TicketStatus } from "@ai-crew/shared";
+import type { Ticket, TicketStatus } from "@ai-crew/shared";
 import { useStore } from "./store.js";
 import { approveTicket, rejectTicket, reviseTicket } from "./lib/api.js";
 
@@ -46,7 +46,7 @@ function TicketSummary({ ticket }: { ticket: Ticket }) {
           프로젝트: <span className="text-slate-200">{ticket.project}</span>
         </span>
         <span>
-          브랜치: <span className="font-mono text-slate-200">{ticketBranchName(ticket.id)}</span>
+          브랜치: <span className="font-mono text-slate-200">{ticket.branch ?? "(확인 중)"}</span>
         </span>
       </div>
       {ticket.diffSummary && (

@@ -39,8 +39,9 @@ export interface CreateProjectResult {
 }
 
 // 새 프로젝트를 WORKSPACE_ROOT 아래에 만든다. git 저장소 주소가 있으면 클론하고, 없으면
-// 새로 초기화한다(git init). 완전히 빈 저장소(커밋이 하나도 없음)는 나중에 티켓 작업 시
-// git worktree가 브랜치를 딸 HEAD가 없어서 실패하므로, 여기서 미리 초기 커밋을 만들어둔다.
+// 새로 초기화한다(git init). 완전히 빈 저장소(커밋이 하나도 없음)는 HEAD가 아직 커밋을
+// 가리키지 않아서(unborn branch) 나중에 티켓 작업 시작 시 `git rev-parse HEAD`(baseSha
+// 계산용)가 실패하므로, 여기서 미리 초기 커밋을 만들어둔다.
 // stack이 알려진 값이면 templates/<stack>/의 기본 CLAUDE.md/.claude/skills를 그 프로젝트에
 // 복사한다 (이미 파일이 있으면 덮어쓰지 않는다 - 클론해온 저장소가 이미 자기 컨벤션을 갖고
 // 있을 수 있으므로 존중한다).

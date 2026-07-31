@@ -109,7 +109,11 @@ async function main() {
   }
 
   console.log("[3/5] DB 스키마를 동기화합니다 (이미 최신이면 아무 일도 안 일어남)…");
-  run("pnpm", ["--filter", "@ai-crew/server", "exec", "prisma", "db", "push"], {
+  // --accept-data-loss: 티켓 스키마가 바뀌면서 컬럼이 없어지는 경우가 있다(예: worktreePath 제거).
+  // 이건 사용자 프로젝트 데이터가 아니라 ai-crew 자체의 티켓 진행상황 기록일 뿐이라 안전하다 -
+  // 이 플래그가 없으면 기존 값이 있는 컬럼을 지울 때 prisma가 대화형 확인을 요구해서 비대화형
+  // 시작 스크립트가 그대로 멈춰버린다 (사용자 결정: 이후 스키마 변경도 계속 자동 진행).
+  run("pnpm", ["--filter", "@ai-crew/server", "exec", "prisma", "db", "push", "--accept-data-loss"], {
     env: { ...process.env, DATABASE_URL: databaseUrl },
   });
 

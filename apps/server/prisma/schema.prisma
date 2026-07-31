@@ -18,7 +18,11 @@ model Ticket {
   status          String   @default("queued")
   parentTicketId  String?
   sessionId       String?
-  worktreePath    String?
+  // 작업이 실제로 진행된 프로젝트의 그 시점 브랜치 이름(참고용) - 격리된 워크트리/새 브랜치 없이
+  // 프로젝트 실제 폴더의 현재 브랜치에 직접 작업하므로 별도 병합 대상 브랜치는 없다.
+  branch          String?
+  // 작업 시작 시점의 HEAD 커밋 - diffSummary(실제 커밋 여부) 계산 기준점.
+  baseSha         String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   lastHeartbeatAt DateTime?
