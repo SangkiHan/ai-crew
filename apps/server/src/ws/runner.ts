@@ -12,6 +12,7 @@ import {
 } from "../tickets/store.js";
 import { findQaEmployee } from "../employees/store.js";
 import { updatePlanningDocResult } from "../planning/store.js";
+import { saveChatMessage } from "../chat/store.js";
 import { broadcastToUi } from "./ui.js";
 
 const runnerSockets = new Set<WebSocket>();
@@ -27,6 +28,7 @@ const pendingConsultRequests = new Map<
   string,
   (result: { success: boolean; answer?: string; error?: string }) => void
 >();
+const pendingEndSessionRequests = new Map<string, (result: { success: boolean; error?: string }) => void>();
 
 export function registerRunnerWs(app: FastifyInstance) {
   app.get("/ws/runner", { websocket: true }, (socket: WebSocket) => {
@@ -106,6 +108,11 @@ async function handleRunnerEvent(event: RunnerToServerEvent, app: FastifyInstanc
     });
   } else if (event.type === "manager_result") {
     busyTeams.delete(event.teamId);
+    if (event.resultText) {
+      saveChatMessage(event.teamId, "manager", event.resultText).catch((err) =>
+        app.log.error(err, "manager 응답 저장 실패")
+      );
+    }
     broadcastToUi({
       type: "manager_result",
       teamId: event.teamId,
@@ -138,6 +145,12 @@ async function handleRunnerEvent(event: RunnerToServerEvent, app: FastifyInstanc
     if (resolve) {
       resolve({ success: event.success, answer: event.answer, error: event.error });
       pendingConsultRequests.delete(event.requestId);
+    }
+  } else if (event.type === "end_session_result") {
+    const resolve = pendingEndSessionRequests.get(event.requestId);
+    if (resolve) {
+      resolve({ success: event.success, error: event.error });
+      pendingEndSessionRequests.delete(event.requestId);
     }
   }
 }
@@ -263,6 +276,28 @@ export async function requestConsultEmployee(
       resolve({ success: false, error: "90초 안에 응답이 없습니다." });
     }, 90000);
     pendingConsultRequests.set(requestId, (result) => {
+      clearTimeout(timeout);
+      resolve(result);
+    });
+    socket.send(JSON.stringify(event));
+  });
+}
+
+// 웹 UI의 "세션 종료" 버튼 전용. 러너(호스트)에 저장된 이 팀의 --resume 대상 세션 id를
+// 지워서, 다음 팀장 호출부터 완전히 새 세션으로 시작하게 한다.
+export async function requestEndSession(teamId: string): Promise<{ success: boolean; error?: string }> {
+  const socket = [...runnerSockets][0];
+  if (!socket) return { success: false, error: "러너가 연결되어 있지 않습니다." };
+
+  const requestId = crypto.randomUUID();
+  const event: ServerToRunnerEvent = { type: "end_session_request", requestId, teamId };
+
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      pendingEndSessionRequests.delete(requestId);
+      resolve({ success: false, error: "10초 안에 응답이 없습니다." });
+    }, 10000);
+    pendingEndSessionRequests.set(requestId, (result) => {
       clearTimeout(timeout);
       resolve(result);
     });

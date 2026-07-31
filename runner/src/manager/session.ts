@@ -31,3 +31,12 @@ export async function writeSessionId(teamId: string, sessionId: string): Promise
   await mkdir(dirname(SESSION_FILE), { recursive: true });
   await writeFile(SESSION_FILE, JSON.stringify(map, null, 2));
 }
+
+// 웹 UI의 "세션 종료" 버튼 전용. 이 팀의 --resume 대상을 지워서, 다음 팀장 호출이 완전히
+// 새 세션으로 시작하게 한다 (이전 대화를 더 이상 기억하지 않음).
+export async function clearSessionId(teamId: string): Promise<void> {
+  const map = await readSessionMap();
+  delete map[teamId];
+  await mkdir(dirname(SESSION_FILE), { recursive: true });
+  await writeFile(SESSION_FILE, JSON.stringify(map, null, 2));
+}

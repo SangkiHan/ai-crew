@@ -20,21 +20,52 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-export function ChatBar({ teamId, onOpenPlanningDocs }: { teamId: string; onOpenPlanningDocs: () => void }) {
+export function ChatBar({
+  teamId,
+  onOpenPlanningDocs,
+  onOpenPastSessions,
+}: {
+  teamId: string;
+  onOpenPlanningDocs: () => void;
+  onOpenPastSessions: () => void;
+}) {
   const chatMessages = useStore((s) => s.chatMessagesByTeam[teamId] ?? EMPTY_MESSAGES);
   const managerStatus = useStore((s) => s.managerStatusByTeam[teamId] ?? "idle");
   const sendUserMessage = useStore((s) => s.sendUserMessage);
+  const loadChatHistory = useStore((s) => s.loadChatHistory);
+  const endSessionForTeam = useStore((s) => s.endSessionForTeam);
   const [text, setText] = useState("");
   const [planningMode, setPlanningMode] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  const [endingSession, setEndingSession] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 새로고침/재접속해도 대화가 이어져 보이도록, 팀이 바뀌거나 처음 뜰 때 서버에 저장된
+  // 기록을 한 번 불러온다 (이미 불러온 팀이면 loadChatHistory 내부에서 스킵한다).
+  useEffect(() => {
+    loadChatHistory(teamId).catch(console.error);
+  }, [teamId, loadChatHistory]);
 
   // manager_log/manager_result가 같은 메시지를 스트리밍으로 계속 갱신할 때도(길이는 안 바뀜)
   // chatMessages 배열 참조 자체가 매번 바뀌므로, 새 메시지든 갱신이든 항상 아래로 붙는다.
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }, [chatMessages]);
+
+  async function handleEndSession() {
+    if (!confirm("세션을 종료할까요? 대화 기록과 팀장의 이전 대화 기억이 모두 사라지고 완전히 새로 시작합니다.")) {
+      return;
+    }
+    setEndingSession(true);
+    try {
+      await endSessionForTeam(teamId);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err));
+    } finally {
+      setEndingSession(false);
+    }
+  }
 
   function addFiles(files: FileList | File[]) {
     const images = Array.from(files).filter((f) => f.type.startsWith("image/"));
@@ -81,9 +112,22 @@ export function ChatBar({ teamId, onOpenPlanningDocs }: { teamId: string; onOpen
         >
           기획{planningMode ? " ✓" : ""}
         </button>
-        <button onClick={onOpenPlanningDocs} className="text-xs text-slate-500 hover:text-slate-300">
-          기획서 목록
-        </button>
+        <div className="flex items-center gap-3">
+          <button onClick={onOpenPastSessions} className="text-xs text-slate-500 hover:text-slate-300">
+            지난 대화
+          </button>
+          <button onClick={onOpenPlanningDocs} className="text-xs text-slate-500 hover:text-slate-300">
+            기획서 목록
+          </button>
+          <button
+            onClick={handleEndSession}
+            disabled={endingSession || managerStatus === "busy"}
+            title="대화 기록과 팀장의 기억을 모두 지우고 완전히 새로 시작합니다"
+            className="text-xs text-slate-500 hover:text-rose-400 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            세션 종료
+          </button>
+        </div>
       </div>
       <div ref={listRef} className="flex-1 overflow-y-auto px-4 py-2">
         {chatMessages.length === 0 ? (

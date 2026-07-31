@@ -14,7 +14,7 @@ export interface MemorySearchResult {
 // 임베딩 계산이 (로컬 모델이라도) 수백ms~1초 걸릴 수 있어 호출부에서 fire-and-forget으로 쓴다.
 export async function saveMemory(
   teamId: string,
-  sourceType: "ticket" | "planning_doc",
+  sourceType: "ticket" | "planning_doc" | "chat_session",
   sourceId: string,
   content: string
 ): Promise<void> {
