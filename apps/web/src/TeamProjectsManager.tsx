@@ -55,9 +55,11 @@ export function TeamProjectsManager({ teamId, onClose }: { teamId: string; onClo
 
         <div className="flex-1 overflow-y-auto p-5">
           <p className="mb-4 text-xs text-slate-500">
-            이 팀이 담당하는 프로젝트 이름(WORKSPACE_ROOT 아래 폴더 이름) 또는 절대경로를 등록하면,
-            팀장이 호출될 때마다 이 목록을 우선 참고합니다. 비워두면 팀장은 지금처럼
-            list_projects로 폴더를 스캔해서 찾습니다.
+            이 팀이 담당하는 프로젝트의 <strong className="text-slate-400">절대경로</strong>를
+            등록하세요 (WORKSPACE_ROOT 밖의 다른 위치도 그대로 가능합니다 - 프로젝트가 실제로 있는
+            폴더 경로를 그대로 넣으면 됩니다). 등록된 목록은 팀장이 호출될 때마다 시스템 프롬프트에
+            그대로 포함되어 우선 참고됩니다. 비워두면 팀장은 지금처럼 WORKSPACE_ROOT를
+            list_projects로 스캔해서 찾습니다.
           </p>
 
           <div className="mb-4 flex flex-col gap-1.5">
@@ -89,7 +91,7 @@ export function TeamProjectsManager({ teamId, onClose }: { teamId: string; onClo
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleAdd();
               }}
-              placeholder="예: cleaning 또는 C:\Users\...\Project\cleaning"
+              placeholder="예: C:\Users\tkdrl\Desktop\Project\cleaning (다른 드라이브/위치도 가능)"
               className="flex-1 rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500"
             />
             <button
