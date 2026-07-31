@@ -67,6 +67,7 @@ export function OrgChart() {
   // 계산은 getState()로 매번 새로 한다.
   const tickets = useStore((s) => s.tickets);
   const consultingEmployeeCounts = useStore((s) => s.consultingEmployeeCounts);
+  const consultingPairCounts = useStore((s) => s.consultingPairCounts);
   const setSelectedNode = useStore((s) => s.setSelectedNode);
   const setSelectedTeamId = useStore((s) => s.setSelectedTeamId);
 
@@ -83,11 +84,22 @@ export function OrgChart() {
     const spacing = 220;
     const clusterGap = 160;
     const boxPaddingX = 50;
+    const teamBoxHeight = 440;
+    const rowGap = 80;
+    // 팀이 계속 늘어나면 가로로 한없이 나란히 배치돼 화면 밖으로 밀려나가던 문제가 있었다 -
+    // 한 행의 너비가 이 값을 넘으면 다음 팀부터는 다음 행으로 줄바꿈한다. 컨테이너 실측 대신
+    // 고정값을 쓰는 단순한 휴리스틱이다(대부분의 데스크탑 화면 폭 기준).
+    const maxRowWidth = 1400;
     let cursorX = 0;
+    let cursorY = 0;
 
     teams.forEach((team) => {
       const teamEmployees = employees.filter((e) => e.teamId === team.id);
       const clusterWidth = Math.max(teamEmployees.length, 1) * spacing;
+      if (cursorX > 0 && cursorX + clusterWidth > maxRowWidth) {
+        cursorX = 0;
+        cursorY += teamBoxHeight + rowGap;
+      }
       const managerX = cursorX + clusterWidth / 2 - spacing / 2;
       const managerStatus = managerStatusByTeam[team.id] === "busy" ? "busy" : "idle";
 
@@ -95,9 +107,9 @@ export function OrgChart() {
       nodes.push({
         id: `team-box-${team.id}`,
         type: "teamBox",
-        position: { x: cursorX - boxPaddingX, y: -110 },
+        position: { x: cursorX - boxPaddingX, y: cursorY - 110 },
         data: { teamId: team.id },
-        style: { width: clusterWidth + boxPaddingX * 2, height: 440, zIndex: -1 },
+        style: { width: clusterWidth + boxPaddingX * 2, height: teamBoxHeight, zIndex: -1 },
         draggable: false,
         selectable: false,
       });
@@ -105,7 +117,7 @@ export function OrgChart() {
       nodes.push({
         id: `team-label-${team.id}`,
         type: "teamLabel",
-        position: { x: managerX, y: -70 },
+        position: { x: managerX, y: cursorY - 70 },
         data: { label: team.name, teamId: team.id },
         draggable: false,
       });
@@ -113,7 +125,7 @@ export function OrgChart() {
       nodes.push({
         id: `manager-${team.id}`,
         type: "agent",
-        position: { x: managerX, y: 20 },
+        position: { x: managerX, y: cursorY + 20 },
         data: {
           label: manager?.name ?? "팀장",
           subtitle: `팀장 · ${DRIVER_LABEL[manager?.driver ?? "claude"]}`,
@@ -131,7 +143,7 @@ export function OrgChart() {
         nodes.push({
           id: employee.id,
           type: "agent",
-          position: { x: startX + i * spacing, y: 200 },
+          position: { x: startX + i * spacing, y: cursorY + 200 },
           data: {
             label: employee.name,
             subtitle: `${DRIVER_LABEL[employee.driver] ?? employee.driver}${employee.model ? ` · ${employee.model}` : ""}`,
@@ -151,9 +163,25 @@ export function OrgChart() {
       cursorX += clusterWidth + clusterGap;
     });
 
+    // ask_employee로 서로 상담 중인 직원 쌍을 잇는 선 - 다른 팀 클러스터에 속해 멀리 떨어져
+    // 있어도 react-flow는 노드 id만 맞으면 알아서 그려주므로 별도 좌표 계산이 필요 없다.
+    for (const key of consultingPairCounts.keys()) {
+      const [nameA, nameB] = key.split("|");
+      const employeeA = employees.find((e) => e.name === nameA);
+      const employeeB = employees.find((e) => e.name === nameB);
+      if (!employeeA || !employeeB) continue;
+      edges.push({
+        id: `consult-${key}`,
+        source: employeeA.id,
+        target: employeeB.id,
+        animated: true,
+        style: { stroke: "#a78bfa", strokeWidth: 2, strokeDasharray: "6 4" },
+      });
+    }
+
     return { nodes, edges };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agents, teams, employees, managerStatusByTeam, tickets, consultingEmployeeCounts]);
+  }, [agents, teams, employees, managerStatusByTeam, tickets, consultingEmployeeCounts, consultingPairCounts]);
 
   return (
     <div className="h-full w-full">
