@@ -25,6 +25,44 @@ export interface HeadlessRunResult {
   success: boolean;
 }
 
+// tool_use 블록을 실제 Claude Code 인터랙티브 UI가 보여주는 "● Read(path)" 형태에 최대한
+// 가깝게 포맷한다 - 사용자가 "클로드코드에 뜨는 작업메시지들 그대로" 보고 싶어해서, 툴 이름별로
+// 가장 눈에 띄는 인자 하나를 뽑아 짧게 보여주고 나머지는 생략한다.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function formatToolUse(block: any): string {
+  const input = block.input ?? {};
+  const name = block.name as string;
+  const detail =
+    input.file_path ??
+    input.command ??
+    input.pattern ??
+    input.path ??
+    input.query ??
+    input.url ??
+    input.description ??
+    "";
+  if (detail) {
+    const truncated = String(detail).length > 200 ? `${String(detail).slice(0, 200)}…` : String(detail);
+    return `● ${name}(${truncated})`;
+  }
+  const raw = JSON.stringify(input);
+  const truncated = raw.length > 200 ? `${raw.slice(0, 200)}…` : raw;
+  return `● ${name}(${truncated})`;
+}
+
+// tool_result 블록(content가 string이거나 [{type:"text",text}] 배열)에서 실제 텍스트만 뽑는다.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractToolResultText(content: any): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((c) => (typeof c === "string" ? c : (c?.text ?? "")))
+      .filter(Boolean)
+      .join("\n");
+  }
+  return "";
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function summarizeEvent(event: any): string | null {
   if (event.type === "system" && event.subtype === "init") {
@@ -40,12 +78,29 @@ function summarizeEvent(event: any): string | null {
     const lines: string[] = [];
     for (const block of event.message.content) {
       if (block.type === "text" && block.text?.trim()) {
-        lines.push(`[claude] ${block.text.trim()}`);
+        lines.push(block.text.trim());
       } else if (block.type === "tool_use") {
-        const input = JSON.stringify(block.input ?? {});
-        const truncated = input.length > 200 ? `${input.slice(0, 200)}…` : input;
-        lines.push(`[claude] tool: ${block.name} ${truncated}`);
+        lines.push(formatToolUse(block));
       }
+    }
+    return lines.length ? lines.join("\n") : null;
+  }
+  if (event.type === "user" && Array.isArray(event.message?.content)) {
+    // 실제 Claude Code 화면에서 "⎿ ..."로 보여주는 툴 실행 결과. 이게 없으면 "무슨 툴을
+    // 불렀는지"는 보여도 "그래서 뭘 봤는지/뭐가 나왔는지"는 전혀 안 보인다.
+    const lines: string[] = [];
+    for (const block of event.message.content) {
+      if (block.type !== "tool_result") continue;
+      const text = extractToolResultText(block.content).trim();
+      if (!text) continue;
+      const truncated = text.length > 500 ? `${text.slice(0, 500)}…` : text;
+      const prefix = block.is_error ? "⎿ ⚠️ " : "⎿ ";
+      lines.push(
+        truncated
+          .split("\n")
+          .map((l, i) => (i === 0 ? `${prefix}${l}` : `  ${l}`))
+          .join("\n")
+      );
     }
     return lines.length ? lines.join("\n") : null;
   }
@@ -77,8 +132,12 @@ export async function runClaudeHeadless(opts: HeadlessRunOptions): Promise<Headl
   // 실제로 파일에 뭐가 들어갔는지 다시 읽어서 바이트 수를 확인한다 - "시스템 프롬프트가
   // 하나도 안 먹힌 것 같다" 증상이 재현될 때, 애초에 쓰기부터 잘못됐는지(내용이 비어있는지)
   // 아니면 claude가 이 파일을 못 읽는 건지 구분하기 위한 마지막 단서.
+  // 이 확인 로그는 티켓 작업 내용 화면(UI)에는 안 보낸다 - 사용자가 보는 화면은 실제
+  // Claude Code 작업 메시지(assistant 텍스트/tool_use/tool_result)만 그대로 보여줘야 한다.
+  // 대신 러너 콘솔에는 남겨서, 이 클래스의 버그(윈도우 MCP/시스템 프롬프트 미적용)가 재발하면
+  // 여전히 바로 진단할 수 있게 한다.
   const writtenSystemPrompt = await readFile(systemPromptFile, "utf-8");
-  opts.onEvent?.(
+  console.log(
     `[claude] 시스템 프롬프트 파일 작성: ${systemPromptFile} (${writtenSystemPrompt.length}자, ` +
       `원본 ${opts.systemPrompt.length}자)`
   );
@@ -105,7 +164,7 @@ export async function runClaudeHeadless(opts: HeadlessRunOptions): Promise<Headl
   if (opts.mcpConfigJson) {
     const mcpConfigFile = join(tempDir, "mcp-config.json");
     await writeFile(mcpConfigFile, opts.mcpConfigJson, "utf-8");
-    opts.onEvent?.(`[claude] mcp-config 파일 작성: ${mcpConfigFile} (${opts.mcpConfigJson.length}자)`);
+    console.log(`[claude] mcp-config 파일 작성: ${mcpConfigFile} (${opts.mcpConfigJson.length}자)`);
     args.push("--mcp-config", mcpConfigFile);
   }
   if (opts.resumeSessionId) {
@@ -120,7 +179,7 @@ export async function runClaudeHeadless(opts: HeadlessRunOptions): Promise<Headl
   // 너무 길 수 있음). "--output-format"/"--append-system-prompt-file" 같은 플래그가 정말
   // 배열에 들어있는지, 순서가 이상하지는 않은지 눈으로 바로 확인하기 위한 마지막 단서.
   const argsForLog = args.map((a, i) => (i === 1 ? "<message>" : a));
-  opts.onEvent?.(`[claude] 실행 인자: ${JSON.stringify(argsForLog)}`);
+  console.log(`[claude] 실행 인자: ${JSON.stringify(argsForLog)}`);
 
   return new Promise((resolve, reject) => {
     // stdin을 열어둔 채(기본값 pipe) 아무것도 안 쓰고 안 닫으면, claude가 몇 초간 stdin을
