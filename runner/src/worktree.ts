@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { mkdir, access } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { promisify } from "node:util";
 import { ticketBranchName } from "@ai-crew/shared";
 
@@ -12,6 +12,15 @@ const WORKTREES_ROOT = process.env.WORKTREES_ROOT ?? join(homedir(), ".ai-crew",
 export interface Worktree {
   branch: string;
   worktreePath: string;
+}
+
+// project는 WORKSPACE_ROOT 아래 이름(예: "puppynote-server")일 수도, 절대경로(예:
+// "C:\Users\...\platform-data-api")일 수도 있다. 워크트리 하위 폴더명은 그냥 그룹핑용이라
+// 절대경로를 통째로 하위 경로로 이어붙이면 안 된다 - 윈도우에서는 드라이브 문자(C:)가
+// 경로 중간에 끼어서 mkdir이 통째로 실패한다(ENOENT, 실제로 겪은 버그). basename만 써서
+// 항상 안전한 폴더 이름 하나로 정규화한다.
+function worktreeGroupName(project: string): string {
+  return basename(project) || project;
 }
 
 async function exists(path: string): Promise<boolean> {
@@ -28,11 +37,12 @@ async function exists(path: string): Promise<boolean> {
 // 워크트리/브랜치를 그대로 재사용한다 (git worktree add는 같은 브랜치명에 두 번 실행되면 실패한다).
 export async function createWorktree(projectPath: string, project: string, ticketId: string): Promise<Worktree> {
   const branch = ticketBranchName(ticketId);
-  const worktreePath = join(WORKTREES_ROOT, project, ticketId);
+  const groupName = worktreeGroupName(project);
+  const worktreePath = join(WORKTREES_ROOT, groupName, ticketId);
   if (await exists(worktreePath)) {
     return { branch, worktreePath };
   }
-  await mkdir(join(WORKTREES_ROOT, project), { recursive: true });
+  await mkdir(join(WORKTREES_ROOT, groupName), { recursive: true });
   await execFileAsync("git", ["-C", projectPath, "worktree", "add", "-b", branch, worktreePath]);
   return { branch, worktreePath };
 }
