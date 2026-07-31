@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Ticket, TicketStatus } from "@ai-crew/shared";
+import { isQaEmployee, type Ticket, type TicketStatus } from "@ai-crew/shared";
 import { useStore } from "./store.js";
 import { approveTicket, rejectTicket, reviseTicket } from "./lib/api.js";
 
@@ -161,9 +161,18 @@ export function DetailPanel() {
   const manager = agents.find((a) => a.id === "manager");
   const employee = employees.find((e) => e.id === selectedNodeId);
 
-  // 티켓의 role은 직원의 id가 아니라 name과 같다.
+  // 티켓의 role은 직원의 id가 아니라 name과 같다. 단, QA 담당 직원은 티켓의 role이 자기
+  // 이름으로 바뀌는 일이 절대 없다(원래 개발자 이름 그대로 유지된 채 qa_review로만 거쳐감) -
+  // role로만 필터링하면 QA 직원 패널에는 항상 "배정된 티켓 없음"만 뜬다(실제로 그렇게 보여서
+  // 나온 사용자 지적). QA 직원은 팀 전체의 산출물을 검증하는 역할이므로, role 대신 같은 팀의
+  // 티켓 전체를 보여준다.
   const roleKey = employee?.name;
-  const tickets = roleKey ? Object.values(allTickets).filter((t) => t.role === roleKey) : [];
+  const isQa = employee ? isQaEmployee(employee.taskDescription) : false;
+  const tickets = employee
+    ? isQa
+      ? Object.values(allTickets).filter((t) => t.teamId === employee.teamId)
+      : Object.values(allTickets).filter((t) => t.role === roleKey)
+    : [];
   const sortedTickets = [...tickets].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const activeTickets = sortedTickets.filter((t) => !isHistoryTicket(t));
   // 기본값은 "지금 진행 중인 것만" - done/failed 이력은 "이력" 버튼을 눌러야 보인다.
