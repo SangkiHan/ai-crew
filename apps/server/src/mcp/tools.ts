@@ -117,6 +117,12 @@ export function searchHistory(teamId: string, query: string, limit?: number) {
   return api(`/api/memory/search?${qs}`);
 }
 
+// 팀장의 create_project MCP 툴 전용 - WORKSPACE_ROOT 아래에 새 프로젝트를 만든다
+// (git clone 또는 git init). 실제 작업은 호스트(러너)에서 진행된다.
+export function createProject(name: string, gitUrl?: string, stack?: string) {
+  return api("/api/projects", { method: "POST", body: JSON.stringify({ name, gitUrl, stack }) });
+}
+
 export async function askUser(question: string) {
   const created = await api<{ id: string }>("/api/questions", {
     method: "POST",

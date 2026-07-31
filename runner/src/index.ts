@@ -8,6 +8,7 @@ import { runCodexDriver } from "./drivers/codex.js";
 import { runMock } from "./drivers/mock.js";
 import { invokeManager } from "./manager/invoke.js";
 import { runPlanningDoc } from "./planning/dispatch.js";
+import { createProject } from "./projects/create.js";
 import { deleteBranch, mergeBranch, removeWorktree } from "./worktree.js";
 import { projectPath } from "./workspace.js";
 
@@ -131,6 +132,24 @@ async function handleMergeTicket(event: { ticketId: string; project: string; bra
   }
 }
 
+// 팀장이 create_project로 새 프로젝트를 요청하면 서버가 보낸다. 실제 git clone/init/템플릿
+// 복사는 호스트에서만 가능하다 (서버는 컨테이너 안이라 WORKSPACE_ROOT 실물 경로가 없다).
+async function handleCreateProjectRequest(event: {
+  requestId: string;
+  name: string;
+  gitUrl?: string;
+  stack?: string;
+}) {
+  const result = await createProject(event.name, event.gitUrl, event.stack);
+  send({
+    type: "create_project_result",
+    requestId: event.requestId,
+    success: result.success,
+    path: result.path,
+    error: result.error,
+  });
+}
+
 const DRIVER_BINARIES: Record<string, string> = { claude: "claude", gemini: "gemini", codex: "codex" };
 
 // 실행파일 이름으로 --version을 돌려본다. cross-spawn을 쓰는 이유: Windows에서 claude/gemini/codex는
@@ -217,6 +236,8 @@ function connect() {
       handleCheckDriverStatus(event.requestId);
     } else if (event.type === "planning_doc_assign") {
       handlePlanningDocAssign(event);
+    } else if (event.type === "create_project_request") {
+      handleCreateProjectRequest(event);
     }
   });
 

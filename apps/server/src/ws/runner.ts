@@ -19,6 +19,10 @@ let subscribed = false;
 // 팀마다 팀장이 독립적으로 바쁠 수 있다 - teamId별로 추적한다.
 const busyTeams = new Set<string>();
 const pendingDriverStatusChecks = new Map<string, (status: Record<string, DriverStatus>) => void>();
+const pendingCreateProjectRequests = new Map<
+  string,
+  (result: { success: boolean; path?: string; error?: string }) => void
+>();
 
 export function registerRunnerWs(app: FastifyInstance) {
   app.get("/ws/runner", { websocket: true }, (socket: WebSocket) => {
@@ -119,6 +123,12 @@ async function handleRunnerEvent(event: RunnerToServerEvent, app: FastifyInstanc
       resolve(event.status);
       pendingDriverStatusChecks.delete(event.requestId);
     }
+  } else if (event.type === "create_project_result") {
+    const resolve = pendingCreateProjectRequests.get(event.requestId);
+    if (resolve) {
+      resolve({ success: event.success, path: event.path, error: event.error });
+      pendingCreateProjectRequests.delete(event.requestId);
+    }
   }
 }
 
@@ -191,6 +201,33 @@ export async function requestDriverStatus(): Promise<Record<string, DriverStatus
     pendingDriverStatusChecks.set(requestId, (status) => {
       clearTimeout(timeout);
       resolve(status);
+    });
+    socket.send(JSON.stringify(event));
+  });
+}
+
+// 팀장의 create_project MCP 툴이 호출한다. 실제 git clone/init/템플릿 복사는 호스트(러너)에서만
+// 가능하다 (서버는 컨테이너 안이라 WORKSPACE_ROOT 실물 경로에 접근 못 함). git clone은 시간이
+// 걸릴 수 있어 타임아웃을 넉넉히 둔다.
+export async function requestCreateProject(
+  name: string,
+  gitUrl?: string,
+  stack?: string
+): Promise<{ success: boolean; path?: string; error?: string }> {
+  const socket = [...runnerSockets][0];
+  if (!socket) return { success: false, error: "러너가 연결되어 있지 않습니다." };
+
+  const requestId = crypto.randomUUID();
+  const event: ServerToRunnerEvent = { type: "create_project_request", requestId, name, gitUrl, stack };
+
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      pendingCreateProjectRequests.delete(requestId);
+      resolve({ success: false, error: "120초 안에 응답이 없습니다 (git clone이 오래 걸릴 수 있음)." });
+    }, 120000);
+    pendingCreateProjectRequests.set(requestId, (result) => {
+      clearTimeout(timeout);
+      resolve(result);
     });
     socket.send(JSON.stringify(event));
   });
