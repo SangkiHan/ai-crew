@@ -1,4 +1,7 @@
 import spawn from "cross-spawn";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 export interface HeadlessRunOptions {
   message: string;
@@ -56,7 +59,16 @@ function escapeSlashCommand(message: string): string {
 
 // claude -p 헤드리스 프로세스를 스폰하고 stream-json 출력을 파싱한다.
 // 팀장(runner/src/manager)과 실제 직원 드라이버(runner/src/drivers/claude.ts) 양쪽에서 공유한다.
-export function runClaudeHeadless(opts: HeadlessRunOptions): Promise<HeadlessRunResult> {
+export async function runClaudeHeadless(opts: HeadlessRunOptions): Promise<HeadlessRunResult> {
+  // systemPrompt(수 KB의 마크다운)와 mcpConfigJson을 CLI 인자로 그대로 넘기면, 윈도우에서
+  // 커맨드라인 인코딩/이스케이핑이 깨져 --output-format 같은 뒤쪽 플래그까지 통째로 무시되는
+  // 문제를 실제로 겪었다 (같은 버전인데도 stream-json 대신 일반 텍스트만 나옴). 큰 값은 임시
+  // 파일에 써서 경로만 넘기는 --append-system-prompt-file/--mcp-config(파일 지원)로 바꿔
+  // 커맨드라인 자체를 짧고 단순하게 유지한다.
+  const tempDir = await mkdtemp(join(tmpdir(), "ai-crew-"));
+  const systemPromptFile = join(tempDir, "system-prompt.txt");
+  await writeFile(systemPromptFile, opts.systemPrompt, "utf-8");
+
   const args = [
     "-p",
     escapeSlashCommand(opts.message),
@@ -67,8 +79,8 @@ export function runClaudeHeadless(opts: HeadlessRunOptions): Promise<HeadlessRun
     opts.permissionMode,
     "--allowedTools",
     opts.allowedTools.join(","),
-    "--append-system-prompt",
-    opts.systemPrompt,
+    "--append-system-prompt-file",
+    systemPromptFile,
   ];
   if (opts.disallowedTools?.length) {
     args.push("--disallowedTools", opts.disallowedTools.join(","));
@@ -77,11 +89,17 @@ export function runClaudeHeadless(opts: HeadlessRunOptions): Promise<HeadlessRun
     args.push("--model", opts.model);
   }
   if (opts.mcpConfigJson) {
-    args.push("--mcp-config", opts.mcpConfigJson);
+    const mcpConfigFile = join(tempDir, "mcp-config.json");
+    await writeFile(mcpConfigFile, opts.mcpConfigJson, "utf-8");
+    args.push("--mcp-config", mcpConfigFile);
   }
   if (opts.resumeSessionId) {
     args.push("--resume", opts.resumeSessionId);
   }
+
+  const cleanupTempDir = () => {
+    rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  };
 
   return new Promise((resolve, reject) => {
     const child = spawn("claude", args, { cwd: opts.cwd });
@@ -129,9 +147,13 @@ export function runClaudeHeadless(opts: HeadlessRunOptions): Promise<HeadlessRun
       stderr += chunk.toString();
     });
 
-    child.on("error", reject);
+    child.on("error", (err) => {
+      cleanupTempDir();
+      reject(err);
+    });
 
     child.on("close", (code) => {
+      cleanupTempDir();
       const success = code === 0;
       if (!success) {
         opts.onEvent?.(`[claude] 비정상 종료 (code ${code}): ${stderr || "(stderr 없음)"}`);
