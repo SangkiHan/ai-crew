@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Ticket, TicketStatus } from "@ai-crew/shared";
 import { useStore } from "./store.js";
 import { approveTicket, rejectTicket, reviseTicket } from "./lib/api.js";
@@ -14,6 +14,13 @@ const STATUS_LABEL: Record<TicketStatus, string> = {
   done: "완료",
   failed: "실패",
 };
+
+// done/failed는 이미 끝난 이력이다 - 기본 화면에는 지금 진행 중인 것만 보여주고,
+// 이력은 사용자가 "이력" 버튼을 눌렀을 때만 보여준다.
+const HISTORY_STATUSES: TicketStatus[] = ["done", "failed"];
+function isHistoryTicket(ticket: Ticket): boolean {
+  return HISTORY_STATUSES.includes(ticket.status);
+}
 
 function TicketRow({ ticket, active, onClick }: { ticket: Ticket; active: boolean; onClick: () => void }) {
   return (
@@ -146,6 +153,9 @@ export function DetailPanel() {
   const allTickets = useStore((s) => s.tickets);
   const logsByTicket = useStore((s) => s.logsByTicket);
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const logContainerRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
 
   const isManager = selectedNodeId?.startsWith("manager-") ?? false;
   const manager = agents.find((a) => a.id === "manager");
@@ -155,14 +165,40 @@ export function DetailPanel() {
   const roleKey = employee?.name;
   const tickets = roleKey ? Object.values(allTickets).filter((t) => t.role === roleKey) : [];
   const sortedTickets = [...tickets].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const activeTickets = sortedTickets.filter((t) => !isHistoryTicket(t));
+  // 기본값은 "지금 진행 중인 것만" - done/failed 이력은 "이력" 버튼을 눌러야 보인다.
+  const visibleTickets = showHistory ? sortedTickets : activeTickets;
 
   useEffect(() => {
-    setSelectedTicketId(sortedTickets[0]?.id ?? null);
+    setShowHistory(false);
+    const active = tickets.filter((t) => !isHistoryTicket(t)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    setSelectedTicketId(active[0]?.id ?? null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedNodeId]);
 
   const selectedTicket = sortedTickets.find((t) => t.id === selectedTicketId) ?? null;
   const logs = selectedTicketId ? logsByTicket[selectedTicketId] ?? [] : [];
+
+  // 로그가 늘어날 때마다 바닥에 붙어있으면 자동으로 최하단까지 스크롤한다 - 사용자가 위로
+  // 스크롤해서 과거 로그를 읽는 중이면(stickToBottomRef=false) 방해하지 않는다.
+  useEffect(() => {
+    const el = logContainerRef.current;
+    if (el && stickToBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [logs]);
+
+  // 티켓을 바꿔 선택하면 그 티켓의 최신 로그부터 보이도록 다시 바닥에 붙인다.
+  useEffect(() => {
+    stickToBottomRef.current = true;
+  }, [selectedTicketId]);
+
+  function handleLogScroll() {
+    const el = logContainerRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    stickToBottomRef.current = distanceFromBottom < 40;
+  }
 
   if (!selectedNodeId || (!isManager && !employee)) {
     return (
@@ -198,11 +234,27 @@ export function DetailPanel() {
         <p className="mt-1 text-xs text-slate-500">{employee!.taskDescription}</p>
       </div>
 
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-slate-500">
+          {showHistory ? "전체 (이력 포함)" : "진행 중"}
+        </span>
+        <button
+          onClick={() => setShowHistory((v) => !v)}
+          className="rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800"
+        >
+          {showHistory ? "진행 중만 보기" : "이력"}
+        </button>
+      </div>
+
       <div className="flex flex-col gap-1.5 overflow-y-auto">
-        {sortedTickets.length === 0 ? (
-          <p className="text-sm text-slate-500">아직 이 직원에게 배정된 티켓이 없습니다.</p>
+        {visibleTickets.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            {showHistory
+              ? "아직 이 직원에게 배정된 티켓이 없습니다."
+              : "지금 진행 중인 티켓이 없습니다. 지난 작업은 위 \"이력\" 버튼으로 볼 수 있습니다."}
+          </p>
         ) : (
-          sortedTickets.map((t) => (
+          visibleTickets.map((t) => (
             <TicketRow
               key={t.id}
               ticket={t}
@@ -220,7 +272,11 @@ export function DetailPanel() {
       )}
 
       {selectedTicket && (
-        <div className="flex-1 overflow-y-auto rounded-lg border border-slate-800 bg-black/40 p-2 font-mono text-xs text-slate-300">
+        <div
+          ref={logContainerRef}
+          onScroll={handleLogScroll}
+          className="flex-1 overflow-y-auto rounded-lg border border-slate-800 bg-black/40 p-2 font-mono text-xs text-slate-300"
+        >
           {logs.length === 0 ? (
             <p className="text-slate-600">아직 로그가 없습니다.</p>
           ) : (
