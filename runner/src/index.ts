@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import spawn from "cross-spawn";
 import WebSocket from "ws";
-import { isQaEmployee, type ChatImage, type DriverStatus, type RunnerToServerEvent, type ServerToRunnerEvent, type Ticket } from "@ai-crew/shared";
+import { isQaEmployee, type DriverStatus, type RunnerToServerEvent, type ServerToRunnerEvent, type Ticket } from "@ai-crew/shared";
 import { fetchEmployees } from "./employees/api.js";
 import { runClaudeDriver, runClaudeQaReview } from "./drivers/claude.js";
 import { runGeminiDriver } from "./drivers/gemini.js";
@@ -14,7 +14,6 @@ import { clearSessionId } from "./manager/session.js";
 import { runPlanningDoc } from "./planning/dispatch.js";
 import { createProject } from "./projects/create.js";
 import { runConsult } from "./consult/run.js";
-import { saveUploadedImages } from "./uploads/store.js";
 import { deleteBranch, mergeBranch, removeWorktree } from "./worktree.js";
 import { projectPath } from "./workspace.js";
 
@@ -96,23 +95,13 @@ async function handlePlanningDocAssign(event: {
   return runPlanningDoc(event.planningDocId, employee, event.message, send, event.resumeSessionId);
 }
 
-// 첨부 이미지를 호스트 파일로 저장하고, 팀장이 Read 툴로 열어볼 수 있도록 절대경로를
-// 메시지 끝에 덧붙인다. 이 경로를 그대로 직원 티켓의 spec에 옮겨 적으면 직원도 볼 수 있다.
-async function appendImagePaths(teamId: string, message: string, images?: ChatImage[]): Promise<string> {
-  if (!images?.length) return message;
-  const paths = await saveUploadedImages(teamId, images);
-  const block = paths.map((p) => `- ${p}`).join("\n");
-  return `${message}\n\n[첨부된 이미지 - Read 툴로 열어서 내용을 확인하세요. 직원에게 위임할 작업과 관련 있으면 이 경로를 그대로 create_ticket의 spec에 포함시키세요]\n${block}`;
-}
-
 // 브라우저 채팅바 -> 서버 -> 여기로 온다. 티켓 큐와는 별개 경로 (동시 실행 수 제한에 안 걸림).
 // UI가 WS 이벤트를 놓치더라도(네트워크 끊김, 탭 백그라운드 등) 여기(러너 콘솔)에는 항상 전체
 // 기록이 남는다 - "답변이 안 보이는데 뭐가 문제인지" 확인할 때는 이 터미널을 스크롤해서 보면 된다.
-async function handleInvokeManager(requestId: string, teamId: string, message: string, images?: ChatImage[]) {
+async function handleInvokeManager(requestId: string, teamId: string, message: string) {
   console.log(`[runner] manager 호출 시작 (team=${teamId}, requestId=${requestId})`);
   try {
-    const finalMessage = await appendImagePaths(teamId, message, images);
-    const result = await invokeManager(teamId, finalMessage, (line) => {
+    const result = await invokeManager(teamId, message, (line) => {
       console.log(`[manager:${teamId}] ${line}`);
       send({ type: "manager_log", teamId, requestId, line, ts: new Date().toISOString() });
     });
@@ -354,7 +343,7 @@ function connect() {
       queue.push(event.ticket);
       drain();
     } else if (event.type === "invoke_manager") {
-      handleInvokeManager(event.requestId, event.teamId, event.message, event.images);
+      handleInvokeManager(event.requestId, event.teamId, event.message);
     } else if (event.type === "merge_ticket") {
       handleMergeTicket(event);
     } else if (event.type === "check_driver_status") {

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AgentConfig, ChatImage, Employee, PlanningDoc, ServerToUiEvent, Team, Ticket } from "@ai-crew/shared";
+import type { AgentConfig, Employee, PlanningDoc, ServerToUiEvent, Team, Ticket } from "@ai-crew/shared";
 import { endSession, fetchChatMessages, sendChatMessage } from "./lib/api.js";
 
 export interface LogLine {
@@ -13,8 +13,6 @@ export interface ChatMessage {
   text: string;
   requestId?: string;
   pending?: boolean;
-  // 사용자 메시지에 첨부한 이미지 미리보기 (브라우저 로컬 blob URL - 서버로 보내는 base64와는 별개).
-  imagePreviewUrls?: string[];
 }
 
 interface StoreState {
@@ -39,13 +37,7 @@ interface StoreState {
   setTickets: (tickets: Ticket[]) => void;
   setPlanningDocs: (teamId: string, docs: PlanningDoc[]) => void;
   setSelectedNode: (id: string | null) => void;
-  sendUserMessage: (
-    teamId: string,
-    text: string,
-    mode?: "chat" | "planning",
-    images?: ChatImage[],
-    imagePreviewUrls?: string[]
-  ) => Promise<void>;
+  sendUserMessage: (teamId: string, text: string, mode?: "chat" | "planning") => Promise<void>;
   handleServerEvent: (event: ServerToUiEvent) => void;
   loadChatHistory: (teamId: string) => Promise<void>;
   endSessionForTeam: (teamId: string) => Promise<void>;
@@ -83,19 +75,18 @@ export const useStore = create<StoreState>((set, get) => ({
 
   setSelectedNode: (id) => set({ selectedNodeId: id }),
 
-  sendUserMessage: async (teamId, text, mode, images, imagePreviewUrls) => {
+  sendUserMessage: async (teamId, text, mode) => {
     const userMsg: ChatMessage = {
       id: crypto.randomUUID(),
       role: "user",
       text: mode === "planning" ? `[기획] ${text}` : text,
-      imagePreviewUrls,
     };
     set((s) => ({
       chatMessagesByTeam: { ...s.chatMessagesByTeam, [teamId]: [...(s.chatMessagesByTeam[teamId] ?? []), userMsg] },
     }));
 
     try {
-      const { requestId } = await sendChatMessage(teamId, text, mode, images);
+      const { requestId } = await sendChatMessage(teamId, text, mode);
       const managerMsg: ChatMessage = {
         id: crypto.randomUUID(),
         role: "manager",
