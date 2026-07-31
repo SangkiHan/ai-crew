@@ -1,6 +1,6 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 
-export type AgentNodeStatus = "idle" | "waiting" | "busy" | "attention";
+export type AgentNodeStatus = "idle" | "waiting" | "busy" | "attention" | "consulting";
 
 export interface AgentNodeData {
   label: string;
@@ -15,6 +15,7 @@ const STATUS_STYLE: Record<AgentNodeStatus, { ring: string; dot: string; label: 
   waiting: { ring: "ring-amber-500", dot: "bg-amber-400", label: "큐 대기" },
   busy: { ring: "ring-emerald-500", dot: "bg-emerald-400", label: "작업중" },
   attention: { ring: "ring-rose-500", dot: "bg-rose-400", label: "확인 필요" },
+  consulting: { ring: "ring-violet-500", dot: "bg-violet-400", label: "직원 간 상담 중" },
 };
 
 export function AgentNode({ data, selected }: NodeProps & { data: AgentNodeData }) {
@@ -33,9 +34,11 @@ export function AgentNode({ data, selected }: NodeProps & { data: AgentNodeData 
       <Handle type="target" position={Position.Top} className="!bg-slate-500" />
       <div className="flex items-center gap-2">
         <span
-          className={["h-2.5 w-2.5 rounded-full", style.dot, data.status === "busy" ? "animate-pulse" : ""].join(
-            " "
-          )}
+          className={[
+            "h-2.5 w-2.5 rounded-full",
+            style.dot,
+            data.status === "busy" || data.status === "consulting" ? "animate-pulse" : "",
+          ].join(" ")}
         />
         <span className="font-semibold text-slate-100">{data.label}</span>
       </div>

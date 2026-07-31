@@ -313,27 +313,38 @@ export async function requestCreateProject(
   });
 }
 
-// 기획자의 ask_employee MCP 툴 전용. 실제 조사는 호스트(러너)에서 그 프로젝트 폴더를 읽기
+// 기획자/직원의 ask_employee MCP 툴 전용. 실제 조사는 호스트(러너)에서 그 프로젝트 폴더를 읽기
 // 전용으로 여는 임시 세션으로 진행되므로, 실제 코드를 읽는 시간을 감안해 넉넉히 대기한다.
+// fromEmployeeName이 있으면(직원이 다른 직원에게 물어본 경우) 질문자/답변자 둘 다 org chart에
+// "상담 중"으로 표시되도록 시작/종료 시점에 브로드캐스트한다 - 없으면(기획 세션이 물어본 경우)
+// 답변자만 표시한다.
 export async function requestConsultEmployee(
   employeeName: string,
   project: string,
-  question: string
+  question: string,
+  fromEmployeeName?: string
 ): Promise<{ success: boolean; answer?: string; error?: string }> {
   const socket = [...runnerSockets][0];
   if (!socket) return { success: false, error: "러너가 연결되어 있지 않습니다." };
 
   const requestId = crypto.randomUUID();
   const event: ServerToRunnerEvent = { type: "consult_employee_request", requestId, employeeName, project, question };
+  const participants = fromEmployeeName ? [fromEmployeeName, employeeName] : [employeeName];
+
+  broadcastToUi({ type: "employee_consult_status", employeeNames: participants, status: "consulting" });
 
   return new Promise((resolve) => {
+    const finish = (result: { success: boolean; answer?: string; error?: string }) => {
+      broadcastToUi({ type: "employee_consult_status", employeeNames: participants, status: "idle" });
+      resolve(result);
+    };
     const timeout = setTimeout(() => {
       pendingConsultRequests.delete(requestId);
-      resolve({ success: false, error: "90초 안에 응답이 없습니다." });
+      finish({ success: false, error: "90초 안에 응답이 없습니다." });
     }, 90000);
     pendingConsultRequests.set(requestId, (result) => {
       clearTimeout(timeout);
-      resolve(result);
+      finish(result);
     });
     socket.send(JSON.stringify(event));
   });

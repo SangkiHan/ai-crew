@@ -76,6 +76,17 @@ export function listTickets(teamId: string, status?: string) {
   return api(`/api/tickets?${qs}`);
 }
 
+// 팀장의 revise_ticket MCP 툴 전용 - 사용자가 채팅으로 "이거 이렇게 고쳐줘" 하면, 새 티켓을
+// 새로 만드는 대신 그 티켓을 작업했던 담당 직원의 세션을 그대로 이어서(--resume) 수정하게
+// 한다. getTicket과 같은 이유로 팀 소속을 먼저 확인한다 - 다른 팀 티켓은 건드릴 수 없다.
+export async function reviseTicket(id: string, teamId: string, message: string) {
+  const ticket = await api<{ teamId: string }>(`/api/tickets/${id}`);
+  if (ticket.teamId !== teamId) {
+    throw new Error(`티켓 ${id}는 다른 팀 소속이라 수정 요청할 수 없습니다`);
+  }
+  return api(`/api/tickets/${id}/revise`, { method: "POST", body: JSON.stringify({ message }) });
+}
+
 // 직원(employee) 전용 - report_blocked MCP 툴이 사용. 진행 중인 티켓 하나에 고정되어 있으므로
 // ticketId는 파라미터로 안 받고 MCP 서버가 자기 프로세스의 env(TICKET_ID)에서 읽어 넘긴다.
 export function reportBlocked(ticketId: string, reason: string) {
@@ -123,12 +134,23 @@ export function createProject(name: string, gitUrl?: string, stack?: string) {
   return api("/api/projects", { method: "POST", body: JSON.stringify({ name, gitUrl, stack }) });
 }
 
-// 기획자의 ask_employee MCP 툴 전용 - 이미 있는 서비스에 기능을 추가하는 기획일 때, 그 프로젝트
+// 기획자/직원의 ask_employee MCP 툴 전용 - 이미 있는 서비스에 기능을 추가하는 기획일 때, 그 프로젝트
 // 담당 직원에게 기존 구조/컨벤션을 직접 물어보고 동기적으로 답을 받는다 (ask_peer와 달리 비동기가
 // 아니다 - 기획 세션 안에서 바로 답을 받아 기획서에 반영해야 하므로). 실제 조사는 호스트(러너)에서
 // 그 프로젝트 폴더를 읽기 전용으로 열어보는 임시 세션으로 진행된다.
-export function consultEmployee(teamId: string, employeeName: string, project: string, question: string) {
-  return api("/api/consult", { method: "POST", body: JSON.stringify({ teamId, employeeName, project, question }) });
+// fromEmployeeName은 질문자 쪽 표시용(누가 물어보고 있는지 org chart에 띄우기)이라 옵션이다 -
+// 기획 세션에서 호출할 때는 질문자에 대응하는 직원 카드가 없어 안 넘어올 수 있다.
+export function consultEmployee(
+  teamId: string,
+  employeeName: string,
+  project: string,
+  question: string,
+  fromEmployeeName?: string
+) {
+  return api("/api/consult", {
+    method: "POST",
+    body: JSON.stringify({ teamId, employeeName, project, question, fromEmployeeName }),
+  });
 }
 
 export async function askUser(question: string) {

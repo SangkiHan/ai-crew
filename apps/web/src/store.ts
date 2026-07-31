@@ -29,6 +29,12 @@ interface StoreState {
   chatHistoryLoadedTeamIds: Set<string>;
   planningDocsByTeam: Record<string, PlanningDoc[]>;
   selectedNodeId: string | null;
+  // ask_employee(consult)로 지금 실시간 소통 중인 직원 이름 -> 동시 진행 중인 상담 개수.
+  // 개수로 세는 이유: 같은 직원(특히 답변자 쪽)이 동시에 여러 상담의 대상이 될 수 있어
+  // 단순 on/off로는 하나가 끝났을 때 다른 하나가 아직 진행 중인데도 표시가 꺼져버린다.
+  // org chart 카드에 "상담 중" 표시를 띄우기 위한 것으로, 티켓 상태와 무관하게 서버가
+  // 직접 브로드캐스트한다.
+  consultingEmployeeCounts: Map<string, number>;
 
   setAgents: (agents: AgentConfig[]) => void;
   setTeams: (teams: Team[]) => void;
@@ -44,7 +50,7 @@ interface StoreState {
 
   employeesForTeam: (teamId: string) => Employee[];
   ticketsForRole: (role: string) => Ticket[];
-  statusForEmployee: (employee: Employee) => "idle" | "waiting" | "busy" | "attention";
+  statusForEmployee: (employee: Employee) => "idle" | "waiting" | "busy" | "attention" | "consulting";
 }
 
 const MAX_LOG_LINES = 500;
@@ -61,6 +67,7 @@ export const useStore = create<StoreState>((set, get) => ({
   chatHistoryLoadedTeamIds: new Set(),
   planningDocsByTeam: {},
   selectedNodeId: null,
+  consultingEmployeeCounts: new Map(),
 
   setAgents: (agents) => set({ agents }),
   setTeams: (teams) => set({ teams }),
@@ -166,6 +173,17 @@ export const useStore = create<StoreState>((set, get) => ({
         };
         return { chatMessagesByTeam: { ...s.chatMessagesByTeam, [event.teamId]: [...list, newMsg] } };
       });
+    } else if (event.type === "employee_consult_status") {
+      set((s) => {
+        const next = new Map(s.consultingEmployeeCounts);
+        for (const name of event.employeeNames) {
+          const count = next.get(name) ?? 0;
+          const updated = event.status === "consulting" ? count + 1 : Math.max(0, count - 1);
+          if (updated === 0) next.delete(name);
+          else next.set(name, updated);
+        }
+        return { consultingEmployeeCounts: next };
+      });
     } else if (event.type === "planning_doc_updated") {
       set((s) => {
         const list = s.planningDocsByTeam[event.doc.teamId] ?? [];
@@ -203,9 +221,12 @@ export const useStore = create<StoreState>((set, get) => ({
   // 티켓의 role은 항상 "원래 담당 개발자"고, qa_review 동안에도 바뀌지 않는다 - QA 직원이
   // 실제로 세션을 돌리는 동안에도 QA 직원의 role로는 매칭되는 티켓이 하나도 없어서 QA 노드에
   // 파란불(작업중 표시)이 전혀 안 켜지는 문제가 있었다. QA 담당 직원이면 자기 팀에 qa_review
-  // 티켓이 있는지로 "지금 검증 중"을 따로 판단하고, 원래 개발자 쪽은 qa_review를 "내 작업"이
-  // 아니라 "결과 기다리는 중"으로 낮춰서 두 노드가 동시에 헷갈리게 busy로 안 뜨게 한다.
+  // 티켓이 있는지로 "지금 검증 중"을 따로 판단한다. 원래 개발자 쪽은 qa_review로 넘어간 순간
+  // 자기가 할 일이 없다 - QA가 반려하기 전까지는(그때 다시 running으로 돌아옴) 새 티켓을
+  // 받아도 되는 상태이므로 queued/assigned(곧 시작할 일이 있는 대기)와 묶지 않고 idle로
+  // 취급한다 (사용자 지적: "QA한테 넘기면 할 일 없는 직원은 대기중이어야 한다").
   statusForEmployee: (employee) => {
+    if ((get().consultingEmployeeCounts.get(employee.name) ?? 0) > 0) return "consulting";
     const tickets = get().ticketsForRole(employee.name);
     if (isQaEmployee(employee.taskDescription)) {
       const teamTickets = Object.values(get().tickets).filter((t) => t.teamId === employee.teamId);
@@ -213,7 +234,7 @@ export const useStore = create<StoreState>((set, get) => ({
     }
     if (tickets.some((t) => t.status === "running")) return "busy";
     if (tickets.some((t) => t.status === "blocked" || t.status === "needs_approval")) return "attention";
-    if (tickets.some((t) => t.status === "queued" || t.status === "assigned" || t.status === "qa_review")) {
+    if (tickets.some((t) => t.status === "queued" || t.status === "assigned")) {
       return "waiting";
     }
     return "idle";
