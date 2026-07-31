@@ -23,6 +23,22 @@ if (existsSync(envPath)) process.loadEnvFile(envPath);
 const SERVER_WS_URL = process.env.SERVER_WS_URL ?? "ws://localhost:8080/ws/runner";
 const { invokeManager } = await import("./src/manager/invoke.js");
 
+// index.ts가 실제로 갖고 있는 나머지 import들도 전부 그대로 가져온다 (부작용만 노림 -
+// 이 중 하나가 top-level에서 뭔가 해서 이후 claude spawn을 오염시키는지 확인).
+await import("./src/employees/api.js");
+await import("./src/drivers/claude.js");
+await import("./src/drivers/gemini.js");
+await import("./src/drivers/codex.js");
+await import("./src/drivers/mock.js");
+await import("./src/manager/session.js");
+await import("./src/planning/dispatch.js");
+await import("./src/projects/create.js");
+await import("./src/consult/run.js");
+await import("./src/uploads/store.js");
+await import("./src/worktree.js");
+await import("./src/workspace.js");
+console.log("[debug] index.ts와 동일한 전체 모듈 import 완료");
+
 // index.ts가 시작할 때 실제로 하는 것과 똑같이, claude --version / --help를 진단용으로
 // 먼저 두 번 spawn해본다 - 남은 유일한 미검증 차이. 이게 원인이면 이 스크립트도 이제 깨질 것.
 function logClaudeDiagnosticsLikeIndexTs() {
