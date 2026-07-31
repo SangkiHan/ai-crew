@@ -2,9 +2,27 @@ import type { FastifyInstance } from "fastify";
 import { ticketBranchName, type Ticket } from "@ai-crew/shared";
 import { applyQaVerdict, createTicket, getTicket, listTickets, transitionTicket } from "../tickets/store.js";
 import { getEmployeeByName } from "../employees/store.js";
+import { getTeam } from "../teams/store.js";
 import { saveMemory } from "../memory/store.js";
 import { pushToAnyRunner, requestManagerInvocation, requestMerge } from "../ws/runner.js";
 import { broadcastToUi } from "../ws/ui.js";
+
+// 경로 구분자가 "/"든 "\"든(서버는 리눅스 컨테이너 안이라 윈도우 경로의 "\"를 node:path가
+// 못 알아본다) 마지막 세그먼트만 뽑아낸다 - 등록된 프로젝트 절대경로와 이름만으로 비교할 때 쓴다.
+function lastPathSegment(p: string): string {
+  const parts = p.split(/[\\/]/).filter(Boolean);
+  return parts[parts.length - 1] ?? p;
+}
+
+// 팀장이 "프로젝트 관리"에 등록된 절대경로 대신 이름만(또는 다른 표기로) 넘겨도, 등록된 목록
+// 중 이름이 일치하는 게 있으면 그 절대경로로 강제 치환한다 - 팀장(LLM)이 매번 정확한 절대경로를
+// 쓸 거라고 프롬프트로만 기대하지 않고, 서버에서 결정적으로 보정한다.
+function resolveRegisteredProject(project: string, registeredProjects: string[]): string {
+  if (registeredProjects.includes(project)) return project;
+  const requestedName = lastPathSegment(project).toLowerCase();
+  const match = registeredProjects.find((p) => lastPathSegment(p).toLowerCase() === requestedName);
+  return match ?? project;
+}
 
 // 팀장이 나중에 search_history로 찾을 수 있도록 완료된 티켓을 임베딩해서 저장한다.
 // 응답을 막지 않는다 (로컬 임베딩이라도 수백ms~1초 걸릴 수 있음).
@@ -38,9 +56,11 @@ export function registerTicketRoutes(app: FastifyInstance) {
     if (teamId && employee.teamId !== teamId) {
       return reply.code(403).send({ error: `"${role}"은(는) 이 팀 소속이 아닙니다` });
     }
+    const team = await getTeam(employee.teamId);
+    const resolvedProject = team ? resolveRegisteredProject(project, team.projects) : project;
     // 티켓 push는 store의 ticketEvents("changed") 구독자(ws/runner.ts) 쪽 한 곳에서만 처리한다.
     // 여기서 별도로 pushToAnyRunner를 부르면 같은 티켓이 두 번 assign되는 버그가 생긴다.
-    return createTicket({ teamId: employee.teamId, role, project, title, spec, parentTicketId });
+    return createTicket({ teamId: employee.teamId, role, project: resolvedProject, title, spec, parentTicketId });
   });
 
   app.get<{ Querystring: { status?: string; teamId?: string } }>("/api/tickets", async (req) => {
