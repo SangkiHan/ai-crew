@@ -85,17 +85,22 @@ export function runClaudeHeadless(opts: HeadlessRunOptions): Promise<HeadlessRun
     let resultText = "";
 
     child.stdout!.on("data", (chunk: Buffer) => {
+      // 윈도우에서 CRLF로 올 수 있어 \r\n 둘 다 줄바꿈으로 취급한다.
       buffer += chunk.toString();
-      const lines = buffer.split("\n");
+      const lines = buffer.split(/\r?\n/);
       buffer = lines.pop() ?? "";
-      for (const line of lines) {
-        if (!line.trim()) continue;
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line) continue;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         let event: any;
         try {
           event = JSON.parse(line);
         } catch {
-          continue; // 부분 라인 등 - 무시
+          // stream-json이어야 할 줄이 파싱 안 되면 (부분 라인이 아니라 진짜 문제일 수 있음)
+          // 조용히 삼키지 말고 원본을 남긴다 - "성공했는데 아무 로그도 없다" 같은 상황을 진단할 단서.
+          opts.onEvent?.(`[claude] (파싱 실패) ${line.slice(0, 300)}`);
+          continue;
         }
         if (typeof event.session_id === "string") sessionId = event.session_id;
         if (event.type === "result" && typeof event.result === "string") {
@@ -116,6 +121,14 @@ export function runClaudeHeadless(opts: HeadlessRunOptions): Promise<HeadlessRun
       const success = code === 0;
       if (!success) {
         opts.onEvent?.(`[claude] 비정상 종료 (code ${code}): ${stderr || "(stderr 없음)"}`);
+      } else if (!resultText) {
+        // 종료 코드는 0인데 result 이벤트를 못 뽑아냈다면 (stdout 파싱이 전부 실패했거나,
+        // claude가 아예 stream-json을 못 뱉었을 가능성) 원인 추정에 남은 유일한 단서인
+        // buffer/stderr라도 남긴다 - 완전히 빈 응답으로 조용히 넘어가지 않는다.
+        opts.onEvent?.(
+          `[claude] 종료 코드는 0이지만 응답 텍스트를 못 읽었습니다. ` +
+            `stderr: ${stderr.trim() || "(없음)"} / 남은 버퍼: ${buffer.slice(0, 300) || "(없음)"}`
+        );
       }
       resolve({ sessionId, resultText: resultText || (success ? "" : stderr), success });
     });
