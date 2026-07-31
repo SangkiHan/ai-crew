@@ -13,6 +13,7 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import spawn from "cross-spawn";
 import WebSocket from "ws";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -21,6 +22,23 @@ if (existsSync(envPath)) process.loadEnvFile(envPath);
 
 const SERVER_WS_URL = process.env.SERVER_WS_URL ?? "ws://localhost:8080/ws/runner";
 const { invokeManager } = await import("./src/manager/invoke.js");
+
+// index.ts가 시작할 때 실제로 하는 것과 똑같이, claude --version / --help를 진단용으로
+// 먼저 두 번 spawn해본다 - 남은 유일한 미검증 차이. 이게 원인이면 이 스크립트도 이제 깨질 것.
+function logClaudeDiagnosticsLikeIndexTs() {
+  const versionCheck = spawn("claude", ["--version"]);
+  let versionOut = "";
+  versionCheck.stdout?.on("data", (c: Buffer) => (versionOut += c.toString()));
+  versionCheck.on("close", () => {
+    const helpCheck = spawn("claude", ["--help"]);
+    let helpOut = "";
+    helpCheck.stdout?.on("data", (c: Buffer) => (helpOut += c.toString()));
+    helpCheck.on("close", () => {
+      console.log(`[debug] claude 진단 완료: version=${versionOut.trim()}, help 길이=${helpOut.length}`);
+    });
+  });
+}
+logClaudeDiagnosticsLikeIndexTs();
 
 const ws = new WebSocket(SERVER_WS_URL);
 
