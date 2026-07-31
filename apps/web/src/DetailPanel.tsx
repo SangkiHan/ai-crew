@@ -75,7 +75,7 @@ export function DetailPanel() {
   const logsByTicket = useStore((s) => s.logsByTicket);
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
 
-  const isManager = selectedNodeId === "manager";
+  const isManager = selectedNodeId?.startsWith("manager-") ?? false;
   const manager = agents.find((a) => a.id === "manager");
   const employee = employees.find((e) => e.id === selectedNodeId);
 

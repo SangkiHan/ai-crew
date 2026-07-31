@@ -55,7 +55,7 @@ export const useStore = create<StoreState>((set, get) => ({
   managerStatusByTeam: {},
   chatMessagesByTeam: {},
   planningDocsByTeam: {},
-  selectedNodeId: "manager",
+  selectedNodeId: null,
 
   setAgents: (agents) => set({ agents }),
   setTeams: (teams) => set({ teams }),
