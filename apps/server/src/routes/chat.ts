@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import type { ChatImage } from "@ai-crew/shared";
 import { requestManagerInvocation } from "../ws/runner.js";
 
 // "기획" 모드로 보낸 메시지는 팀장에게 그대로 전달하지 않고, 코드 티켓 대신 기획서를 만들도록
@@ -13,15 +14,15 @@ function buildPlanningMessage(message: string): string {
 }
 
 export function registerChatRoutes(app: FastifyInstance) {
-  app.post<{ Body: { teamId: string; message: string; mode?: "chat" | "planning" } }>(
+  app.post<{ Body: { teamId: string; message: string; mode?: "chat" | "planning"; images?: ChatImage[] } }>(
     "/api/chat",
     async (req, reply) => {
-      const { teamId, message, mode } = req.body;
+      const { teamId, message, mode, images } = req.body;
       if (!teamId) return reply.code(400).send({ error: "teamId is required" });
       if (!message?.trim()) return reply.code(400).send({ error: "message is required" });
 
       const finalMessage = mode === "planning" ? buildPlanningMessage(message) : message;
-      const result = requestManagerInvocation(teamId, finalMessage);
+      const result = requestManagerInvocation(teamId, finalMessage, images);
       if (!result.ok) {
         const status = result.reason === "busy" ? 409 : 503;
         const error =

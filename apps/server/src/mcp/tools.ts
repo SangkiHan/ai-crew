@@ -123,6 +123,14 @@ export function createProject(name: string, gitUrl?: string, stack?: string) {
   return api("/api/projects", { method: "POST", body: JSON.stringify({ name, gitUrl, stack }) });
 }
 
+// 기획자의 ask_employee MCP 툴 전용 - 이미 있는 서비스에 기능을 추가하는 기획일 때, 그 프로젝트
+// 담당 직원에게 기존 구조/컨벤션을 직접 물어보고 동기적으로 답을 받는다 (ask_peer와 달리 비동기가
+// 아니다 - 기획 세션 안에서 바로 답을 받아 기획서에 반영해야 하므로). 실제 조사는 호스트(러너)에서
+// 그 프로젝트 폴더를 읽기 전용으로 열어보는 임시 세션으로 진행된다.
+export function consultEmployee(teamId: string, employeeName: string, project: string, question: string) {
+  return api("/api/consult", { method: "POST", body: JSON.stringify({ teamId, employeeName, project, question }) });
+}
+
 export async function askUser(question: string) {
   const created = await api<{ id: string }>("/api/questions", {
     method: "POST",

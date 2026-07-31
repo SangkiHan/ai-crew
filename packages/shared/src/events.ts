@@ -37,12 +37,21 @@ export type RunnerToServerEvent =
       content: string;
       sessionId?: string;
     }
-  | { type: "create_project_result"; requestId: string; success: boolean; path?: string; error?: string };
+  | { type: "create_project_result"; requestId: string; success: boolean; path?: string; error?: string }
+  | { type: "consult_employee_result"; requestId: string; success: boolean; answer?: string; error?: string };
+
+// 채팅에서 첨부한 이미지. 브라우저에서 base64로 인코딩해 보내면, 러너가 호스트 파일로
+// 저장하고 그 절대경로를 팀장/직원의 프롬프트에 덧붙인다 (Read 툴로 열어보게).
+export interface ChatImage {
+  name: string;
+  mimeType: string;
+  dataBase64: string;
+}
 
 export type ServerToRunnerEvent =
   | { type: "job_assign"; ticket: Ticket }
   | { type: "job_cancel"; ticketId: string }
-  | { type: "invoke_manager"; requestId: string; teamId: string; message: string }
+  | { type: "invoke_manager"; requestId: string; teamId: string; message: string; images?: ChatImage[] }
   | { type: "merge_ticket"; ticketId: string; project: string; branch: string; worktreePath: string }
   | { type: "check_driver_status"; requestId: string }
   | {
@@ -61,4 +70,11 @@ export type ServerToRunnerEvent =
       name: string;
       gitUrl?: string;
       stack?: string;
+    }
+  | {
+      type: "consult_employee_request";
+      requestId: string;
+      employeeName: string;
+      project: string;
+      question: string;
     };
