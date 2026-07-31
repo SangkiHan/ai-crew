@@ -1,19 +1,26 @@
-import { readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Employee, RunnerToServerEvent, Ticket } from "@ai-crew/shared";
-import { createWorktree } from "../worktree.js";
+import { currentBranch, currentHeadSha } from "../git.js";
 import { projectPath } from "../workspace.js";
 import { fetchPendingPeerMessages, reportQaFallback } from "./api.js";
 import { buildEmployeePrompt, formatPendingPeerMessages } from "./prompt.js";
 
 export interface PreparedJob {
-  worktreePath: string;
+  cwd: string;
   message: string;
   systemPrompt: string;
+  baseSha: string | null;
 }
 
-function driverPidFile(worktreePath: string): string {
-  return join(worktreePath, ".ai-crew-driver.pid");
+// 프로젝트 실제 폴더에서 직접 작업하므로(격리된 워크트리 없음), 드라이버 pid 같은 러너 내부
+// 상태 파일을 그 폴더 안에 두면 안 된다 - 사용자의 실제 저장소에 낯선 파일이 섞여 들어간다.
+// 대신 러너 전용 상태 디렉터리에 티켓 id로 키를 잡아 보관한다.
+const STATE_ROOT = join(homedir(), ".ai-crew", "state");
+
+function driverPidFile(ticketId: string): string {
+  return join(STATE_ROOT, `${ticketId}.pid`);
 }
 
 function isAlive(pid: number): boolean {
@@ -30,12 +37,12 @@ function isAlive(pid: number): boolean {
 // 부모(러너)가 죽어도 자동으로 안 죽고 고아 프로세스로 계속 돌아가는 경우가 있어서, 확인 없이
 // 새 세션을 또 띄우면 같은 티켓에 여러 프로세스가 동시에 도는 사고가 난다 (실제로 겪음).
 // 새로 시작하기 전에 이전 프로세스가 살아있는지 확인하고 정리한다.
-async function killStaleDriverProcess(worktreePath: string): Promise<void> {
+async function killStaleDriverProcess(ticketId: string): Promise<void> {
   try {
-    const raw = await readFile(driverPidFile(worktreePath), "utf-8");
+    const raw = await readFile(driverPidFile(ticketId), "utf-8");
     const pid = Number(raw.trim());
     if (pid && isAlive(pid)) {
-      console.log(`[runner] 이전 세션(pid ${pid})이 아직 살아있어 정리합니다: ${worktreePath}`);
+      console.log(`[runner] 이전 세션(pid ${pid})이 아직 살아있어 정리합니다 (ticket ${ticketId})`);
       process.kill(pid, "SIGTERM");
     }
   } catch {
@@ -43,21 +50,25 @@ async function killStaleDriverProcess(worktreePath: string): Promise<void> {
   }
 }
 
-export async function writeDriverPid(worktreePath: string, pid: number | null | undefined): Promise<void> {
+export async function writeDriverPid(ticketId: string, pid: number | null | undefined): Promise<void> {
   if (!pid) return;
-  await writeFile(driverPidFile(worktreePath), String(pid)).catch(() => {});
+  await mkdir(STATE_ROOT, { recursive: true }).catch(() => {});
+  await writeFile(driverPidFile(ticketId), String(pid)).catch(() => {});
 }
 
-export async function clearDriverPid(worktreePath: string): Promise<void> {
-  await unlink(driverPidFile(worktreePath)).catch(() => {});
+export async function clearDriverPid(ticketId: string): Promise<void> {
+  await unlink(driverPidFile(ticketId)).catch(() => {});
 }
 
 function toDisallowedBashPatterns(requireApproval: string[]): string[] {
   return requireApproval.map((cmd) => `Bash(${cmd}:*)`);
 }
 
-// claude/gemini/codex 드라이버가 공유하는 준비 단계: worktree 생성, 미답변 동료 메시지 포함,
-// 시스템 프롬프트 생성. CLI마다 실제 spawn 방식/플래그만 다르다.
+// claude/gemini/codex 드라이버가 공유하는 준비 단계: 프로젝트 실제 폴더를 cwd로 확인,
+// 미답변 동료 메시지 포함, 시스템 프롬프트 생성. CLI마다 실제 spawn 방식/플래그만 다르다.
+// 사용자 결정: 격리된 워크트리/새 브랜치를 만들지 않고 프로젝트 실제 폴더의 현재 체크아웃된
+// 브랜치에 직접 작업한다 - 같은 프로젝트에 티켓이 동시에 여러 개 돌면 서로 파일을 건드릴 수
+// 있다는 걸 사용자가 인지하고 선택한 트레이드오프다.
 export async function prepareEmployeeJob(
   ticket: Ticket,
   employee: Employee,
@@ -69,13 +80,15 @@ export async function prepareEmployeeJob(
     send({ type: "job_status", ticketId: ticket.id, status: "running" });
   }
 
-  const { worktreePath } = await createWorktree(projectPath(ticket.project), ticket.project, ticket.id);
-  await killStaleDriverProcess(worktreePath);
-  send({ type: "job_meta", ticketId: ticket.id, worktreePath });
+  const cwd = projectPath(ticket.project);
+  await killStaleDriverProcess(ticket.id);
+
+  const [branch, baseSha] = await Promise.all([currentBranch(cwd), currentHeadSha(cwd)]);
+  send({ type: "job_meta", ticketId: ticket.id, branch: branch ?? undefined, baseSha: baseSha ?? undefined });
   send({
     type: "job_log",
     ticketId: ticket.id,
-    line: `[${employee.name}] worktree 준비 완료: ${worktreePath}`,
+    line: `[${employee.name}] 작업 시작: ${cwd} (브랜치: ${branch ?? "확인 안 됨"})`,
     ts: now(),
   });
 
@@ -86,38 +99,35 @@ export async function prepareEmployeeJob(
     : "";
   const message = `${qaContext}## 티켓: ${ticket.title}\n\n${ticket.spec}${formatPendingPeerMessages(pendingPeerMessages)}`;
 
-  return { worktreePath, message, systemPrompt: buildEmployeePrompt(employee.taskDescription) };
+  return { cwd, message, systemPrompt: buildEmployeePrompt(employee.taskDescription), baseSha };
 }
 
-// QA 검증 단계 전용 준비 함수. 새 워크트리를 만들지 않고 개발자가 이미 작업한 워크트리를
-// 그대로 재사용한다 - QA는 실제로 그 코드를 리뷰/테스트해야 하므로 격리된 새 폴더가 아니라
-// 바로 그 결과물을 봐야 한다.
+// QA 검증 단계 전용 준비 함수. 개발자가 작업한 것과 같은 프로젝트 실제 폴더를 그대로 쓴다 -
+// QA는 실제로 그 코드를 리뷰/테스트해야 하므로 격리된 새 폴더가 아니라 바로 그 결과물을 봐야 한다.
 export async function prepareQaJob(
   ticket: Ticket,
   qaEmployee: Employee,
   send: (event: RunnerToServerEvent) => void
 ): Promise<PreparedJob> {
-  if (!ticket.worktreePath) {
-    throw new Error(`QA 검증할 워크트리가 없습니다 (ticket ${ticket.id})`);
-  }
-  await killStaleDriverProcess(ticket.worktreePath);
+  const cwd = projectPath(ticket.project);
+  await killStaleDriverProcess(ticket.id);
   send({
     type: "job_log",
     ticketId: ticket.id,
-    line: `[${qaEmployee.name}] QA 검증 시작: ${ticket.worktreePath}`,
+    line: `[${qaEmployee.name}] QA 검증 시작: ${cwd}`,
     ts: new Date().toISOString(),
   });
 
   const message =
     `## QA 검증 요청\n\n다음 티켓의 구현 결과를 검증하세요.\n\n` +
     `### 원래 티켓: ${ticket.title}\n${ticket.spec}\n\n` +
-    `이 워크트리(${ticket.worktreePath})에 이미 구현이 완료되어 있습니다. 코드를 리뷰하고, ` +
+    `이 프로젝트(${cwd})에 이미 구현이 완료되어 있습니다. 코드를 리뷰하고, ` +
     `가능하면 실제로 빌드/테스트를 실행해서 요구사항대로 동작하는지 확인하세요. ` +
     `문제가 없으면 report_qa_result 툴로 pass:true를, 문제가 있으면 pass:false와 ` +
     `구체적인 수정 지시(무엇을 어떻게 고쳐야 하는지)를 note에 담아 호출하세요. ` +
     `직접 코드를 고치지 마세요 - 검증과 판정만 하는 역할입니다.`;
 
-  return { worktreePath: ticket.worktreePath, message, systemPrompt: buildEmployeePrompt(qaEmployee.taskDescription) };
+  return { cwd, message, systemPrompt: buildEmployeePrompt(qaEmployee.taskDescription), baseSha: ticket.baseSha };
 }
 
 // QA 세션이 끝났는데 report_qa_result를 안 불렀으면(세션이 그냥 종료됨) 안전망으로 통과 처리한다.

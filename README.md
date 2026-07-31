@@ -21,8 +21,9 @@ pnpm start
    (`WORKSPACE_ROOT`)를 물어보고 `.env`를 만든다.
 2. `docker compose up -d --build`로 postgres/server/web/caddy 4개 컨테이너를 백그라운드로 띄운다.
 3. 서버가 `/health`에 응답할 때까지 최대 60초 기다린다.
-4. `prisma db push`로 DB 스키마를 동기화한다 (이미 최신이면 아무 일도 안 함 — 몇 번을 다시 실행해도
-   안전하다).
+4. `prisma db push --accept-data-loss`로 DB 스키마를 동기화한다 (이미 최신이면 아무 일도 안 함 —
+   몇 번을 다시 실행해도 안전하다. `--accept-data-loss`는 티켓 스키마에서 컬럼이 없어지는 변경이
+   있을 때 비대화형으로도 막히지 않게 하기 위함 — ai-crew 자체 진행상황 기록이라 안전하다).
 5. 마지막으로 **러너**(`pnpm --filter @ai-crew/runner dev`)도 백그라운드(detached)로 띄운다. 로그는
    `.run/runner.log`에 쌓이고, pid는 `.run/runner.pid`에 기록된다.
 
@@ -144,7 +145,7 @@ npm install -g @openai/codex && codex login
 티켓은 다음 상태를 오간다:
 
 ```
-queued(대기) → assigned(배정) → running(작업중) ─┬→ review(검수) → done(완료)
+queued(대기) → assigned(배정) → running(작업중) ─┬→ review(검수, 즉시 자동으로 done) → done(완료)
                                                  ├→ blocked(막힘)   → 팀장이 다른 직원에게 새 티켓 발행
                                                  ├→ needs_approval  → 위험한 명령이라 사용자 승인 대기
                                                  └→ failed(실패)
@@ -153,15 +154,17 @@ queued(대기) → assigned(배정) → running(작업중) ─┬→ review(검�
 - **`blocked`가 핵심이다.** 직원이 작업 중 자기 담당 밖의 일이 필요하면(예: 프론트 작업 중 없는 백엔드
   API를 발견) `report_blocked` 툴로 팀장에게 보고한다. 티켓은 즉시 `blocked`가 되고, 팀장이 자동으로
   깨어나 상황을 파악한 뒤 다른 직원에게 `parentTicketId`를 걸어 새 티켓을 발행한다. 그 새 티켓이
-  사람 승인을 거쳐 **실제로 메인 브랜치에 머지되면**(아래 참고), 원래 막혀있던 티켓이 자동으로
-  재개되어 다시 시도한다.
+  완료되면(아래 참고) 원래 막혀있던 티켓이 자동으로 재개되어 다시 시도한다.
 - **사소한 건 직원끼리 팀장 없이 직접 묻는다.** `ask_peer` 툴로 동료 직원에게 비동기로 질문을 남길 수
   있다 (예: "응답 필드명이 isFavorited인가요?"). 물어본 쪽은 답을 기다리지 않고 하던 작업을 계속하고,
   받는 쪽은 자기 다음 티켓을 받을 때 미답변 질문을 보고 `answer_peer_message`로 답한다.
-- 직원은 실제 프로젝트 폴더를 직접 건드리지 않고 **git worktree**라는 격리된 작업 공간에서만 일한다.
-  `review` 티켓을 사람이 웹 UI에서 **승인**하면, 러너가 그 워크트리 브랜치를 실제로 프로젝트의 메인
-  브랜치에 `git merge`하고 워크트리/브랜치를 정리한다 — 승인은 상태만 바꾸는 게 아니라 실제 머지를
-  일으킨다.
+- 직원은 격리된 워크트리/새 브랜치가 아니라 **프로젝트 실제 폴더의 현재 체크아웃된 브랜치에 직접**
+  작업하고 직접 커밋한다(사용자 결정 - 같은 프로젝트에 티켓이 동시에 여러 개 돌면 서로 파일을 건드릴
+  수 있다는 걸 인지하고 선택한 트레이드오프). `review`는 사람이 승인 버튼을 눌러야 하는 관문이
+  아니라 **곧장 자동으로 `done`으로 넘어가는 경유지**다 - 이미 실제 브랜치에 커밋까지 끝난 상태라
+  따로 병합할 것도 없다. 검수는 티켓이 `review`(→`done`)에 도달하면 팀장이 자동으로 깨어나 직원의
+  최종 보고와 실제 커밋 여부(diffSummary)를 사용자에게 전달하는 방식으로 한다 - 사람은 그 보고를
+  읽고 필요하면 UI의 "수정 요청"으로 같은 직원 세션을 이어서(`--resume`) 후속 지시를 내린다.
 - `git push`처럼 위험한 명령은 직원의 `requireApproval` 목록에 있으면 실행 전 차단된다
   (Claude는 `--disallowedTools`로 확실히, Gemini/Codex는 정책 엔진 한계로 best-effort).
 
@@ -226,7 +229,7 @@ curl localhost:8080/health
 
 # 최초 1회: DB 테이블 생성 (postgres 컨테이너가 뜬 뒤에)
 DATABASE_URL="postgresql://aicrew:aicrew@localhost:5432/aicrew" \
-  pnpm --filter @ai-crew/server exec prisma db push
+  pnpm --filter @ai-crew/server exec prisma db push --accept-data-loss
 
 # 러너(호스트 프로세스)는 팀장/직원 MCP 서버를 apps/server/dist/mcp/*.js로 직접 스폰한다 -
 # 이건 도커 이미지 안의 dist가 아니라 호스트 파일시스템의 dist라서, 위 docker build와 별개로
