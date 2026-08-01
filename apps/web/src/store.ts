@@ -35,6 +35,10 @@ interface StoreState {
   // org chart 카드에 "상담 중" 표시를 띄우기 위한 것으로, 티켓 상태와 무관하게 서버가
   // 직접 브로드캐스트한다.
   consultingEmployeeCounts: Map<string, number>;
+  // 어떤 두 직원이 서로 상담 중인지("A|B" 형태 정렬된 키) -> 동시 진행 개수. org chart에
+  // 두 직원 카드를 잇는 선을 그리기 위한 것 - 질문자/답변자 이름이 둘 다 있을 때만 채워진다
+  // (기획 세션이 물어본 경우처럼 질문자 쪽 이름이 없으면 선을 그릴 대상이 없다).
+  consultingPairCounts: Map<string, number>;
 
   setAgents: (agents: AgentConfig[]) => void;
   setTeams: (teams: Team[]) => void;
@@ -68,6 +72,7 @@ export const useStore = create<StoreState>((set, get) => ({
   planningDocsByTeam: {},
   selectedNodeId: null,
   consultingEmployeeCounts: new Map(),
+  consultingPairCounts: new Map(),
 
   setAgents: (agents) => set({ agents }),
   setTeams: (teams) => set({ teams }),
@@ -175,14 +180,22 @@ export const useStore = create<StoreState>((set, get) => ({
       });
     } else if (event.type === "employee_consult_status") {
       set((s) => {
-        const next = new Map(s.consultingEmployeeCounts);
+        const nextCounts = new Map(s.consultingEmployeeCounts);
         for (const name of event.employeeNames) {
-          const count = next.get(name) ?? 0;
+          const count = nextCounts.get(name) ?? 0;
           const updated = event.status === "consulting" ? count + 1 : Math.max(0, count - 1);
-          if (updated === 0) next.delete(name);
-          else next.set(name, updated);
+          if (updated === 0) nextCounts.delete(name);
+          else nextCounts.set(name, updated);
         }
-        return { consultingEmployeeCounts: next };
+        const nextPairs = new Map(s.consultingPairCounts);
+        if (event.employeeNames.length === 2) {
+          const key = [...event.employeeNames].sort().join("|");
+          const count = nextPairs.get(key) ?? 0;
+          const updated = event.status === "consulting" ? count + 1 : Math.max(0, count - 1);
+          if (updated === 0) nextPairs.delete(key);
+          else nextPairs.set(key, updated);
+        }
+        return { consultingEmployeeCounts: nextCounts, consultingPairCounts: nextPairs };
       });
     } else if (event.type === "planning_doc_updated") {
       set((s) => {
