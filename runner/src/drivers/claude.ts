@@ -118,7 +118,7 @@ export async function runClaudeReviseDriver(
 
   const result = await runClaudeHeadless({
     message,
-    systemPrompt: buildEmployeePrompt(employee.taskDescription),
+    systemPrompt: buildEmployeePrompt(employee),
     allowedTools: [...employee.allowedTools, ...EMPLOYEE_TOOL_NAMES],
     disallowedTools: toDisallowedBashPatterns(employee.requireApproval),
     permissionMode: "bypassPermissions",

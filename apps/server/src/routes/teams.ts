@@ -7,6 +7,7 @@ import {
   listTeams,
   updateTeamProjects,
 } from "../teams/store.js";
+import { pruneEmployeeProjects } from "../employees/store.js";
 
 export function registerTeamRoutes(app: FastifyInstance) {
   app.get("/api/teams", async () => {
@@ -34,7 +35,10 @@ export function registerTeamRoutes(app: FastifyInstance) {
         return reply.code(400).send({ error: "projects must be an array" });
       }
       const projects = req.body.projects.map((p) => p.trim()).filter(Boolean);
-      return updateTeamProjects(req.params.id, projects);
+      const team = await updateTeamProjects(req.params.id, projects);
+      // 목록에서 빠진 프로젝트를 담당하고 있던 직원이 있으면 그 직원의 담당에서도 걷어낸다.
+      await pruneEmployeeProjects(req.params.id, projects);
+      return team;
     }
   );
 

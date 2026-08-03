@@ -60,6 +60,19 @@ export function registerTicketRoutes(app: FastifyInstance) {
     }
     const team = await getTeam(employee.teamId);
     const resolvedProject = team ? resolveRegisteredProject(project, team.projects) : project;
+    // 담당 프로젝트가 지정된 직원에게는 그 프로젝트의 티켓만 만들 수 있다. 비어있으면 (이 필드가
+    // 생기기 전에 만들어진 직원 포함) 팀의 모든 프로젝트를 담당한다는 뜻이라 그냥 통과시킨다.
+    // 반드시 resolveRegisteredProject로 정규화한 뒤에 비교한다 - 팀장이 절대경로 대신 이름만
+    // 넘기는 정상 요청이 오탐으로 막히면 안 된다.
+    if (employee.projects.length > 0 && !employee.projects.includes(resolvedProject)) {
+      // 이 400은 MCP 툴 결과로 팀장(LLM)에게 그대로 돌아간다 - 메시지 자체가 복구 지시문이다.
+      return reply.code(400).send({
+        error:
+          `"${role}"의 담당 프로젝트가 아닙니다 (요청: ${resolvedProject}). ` +
+          `이 직원의 담당 프로젝트: ${employee.projects.join(", ")}. ` +
+          `list_employees로 이 프로젝트를 담당하는 다른 직원을 찾아 위임하세요.`,
+      });
+    }
     // 티켓 push는 store의 ticketEvents("changed") 구독자(ws/runner.ts) 쪽 한 곳에서만 처리한다.
     // 여기서 별도로 pushToAnyRunner를 부르면 같은 티켓이 두 번 assign되는 버그가 생긴다.
     return createTicket({ teamId: employee.teamId, role, project: resolvedProject, title, spec, parentTicketId });

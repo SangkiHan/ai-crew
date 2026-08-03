@@ -137,9 +137,23 @@ export function createEmployee(input: {
   driver: string;
   model?: string;
   taskDescription: string;
+  projects?: string[];
 }): Promise<Employee> {
   return fetch("/api/employees", {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  }).then((res) => json<Employee>(res));
+}
+
+// 보낸 필드만 갱신한다 (담당 프로젝트 편집용). projects는 부분 patch가 아니라 전체 교체다 -
+// updateTeamProjects와 같은 방식으로, UI가 항상 바뀐 전체 목록을 보낸다.
+export function updateEmployee(
+  id: string,
+  input: Partial<{ taskDescription: string; projects: string[] }>
+): Promise<Employee> {
+  return fetch(`/api/employees/${id}`, {
+    method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   }).then((res) => json<Employee>(res));

@@ -13,6 +13,8 @@ interface EmployeeBody {
   driver: string;
   model?: string;
   taskDescription: string;
+  // 담당 프로젝트(팀에 등록된 프로젝트 중 선택). 비우면 팀의 모든 프로젝트를 담당한다.
+  projects?: string[];
   allowedTools?: string[];
   requireApproval?: string[];
 }
@@ -33,7 +35,8 @@ export function registerEmployeeRoutes(app: FastifyInstance) {
   });
 
   app.post<{ Body: EmployeeBody }>("/api/employees", async (req, reply) => {
-    const { teamId, name, driver, model, taskDescription, allowedTools, requireApproval } = req.body;
+    const { teamId, name, driver, model, taskDescription, projects, allowedTools, requireApproval } =
+      req.body;
     if (!teamId || !name || !driver || !taskDescription) {
       return reply.code(400).send({ error: "teamId, name, driver, taskDescription are required" });
     }
@@ -47,6 +50,7 @@ export function registerEmployeeRoutes(app: FastifyInstance) {
         driver,
         model,
         taskDescription,
+        projects: projects ?? [],
         allowedTools: allowedTools?.length ? allowedTools : DEFAULT_ALLOWED_TOOLS,
         requireApproval: requireApproval ?? DEFAULT_REQUIRE_APPROVAL,
       });
