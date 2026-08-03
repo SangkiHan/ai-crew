@@ -328,7 +328,14 @@ export async function requestConsultEmployee(
   if (!socket) return { success: false, error: "러너가 연결되어 있지 않습니다." };
 
   const requestId = crypto.randomUUID();
-  const event: ServerToRunnerEvent = { type: "consult_employee_request", requestId, employeeName, project, question };
+  const event: ServerToRunnerEvent = {
+    type: "consult_employee_request",
+    requestId,
+    employeeName,
+    project,
+    question,
+    fromEmployeeName,
+  };
   const participants = fromEmployeeName ? [fromEmployeeName, employeeName] : [employeeName];
 
   broadcastToUi({ type: "employee_consult_status", employeeNames: participants, status: "consulting" });

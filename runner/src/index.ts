@@ -166,13 +166,14 @@ async function handleCreateProjectRequest(event: {
   });
 }
 
-// 기획자가 ask_employee로 물어보면 서버가 이걸 보낸다. 실제 조사는 호스트(러너)에서만 가능하다
-// (그 프로젝트의 실제 코드를 읽어야 하므로).
+// 기획자나 동료 직원이 ask_employee로 물어보면 서버가 이걸 보낸다. 실제 조사는 호스트(러너)에서만
+// 가능하다 (그 프로젝트의 실제 코드를 읽어야 하므로).
 async function handleConsultEmployeeRequest(event: {
   requestId: string;
   employeeName: string;
   project: string;
   question: string;
+  fromEmployeeName?: string;
 }) {
   const employees = await fetchEmployees();
   const employee = employees.find((e) => e.name === event.employeeName);
@@ -185,7 +186,7 @@ async function handleConsultEmployeeRequest(event: {
     });
     return;
   }
-  const result = await runConsult(employee, event.project, event.question);
+  const result = await runConsult(employee, event.project, event.question, event.fromEmployeeName);
   send({
     type: "consult_employee_result",
     requestId: event.requestId,

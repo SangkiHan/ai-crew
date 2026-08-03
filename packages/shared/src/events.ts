@@ -87,5 +87,9 @@ export type ServerToRunnerEvent =
       employeeName: string;
       project: string;
       question: string;
+      // 물어본 쪽이 동료 직원이면 그 이름, 기획자면 생략. 답하는 직원의 프롬프트를 "기획 질문"과
+      // "동료의 개발 질문" 중 어느 쪽으로 세울지가 달라진다 - 후자는 화면/API 특정처럼 지금
+      // 진행 중인 작업을 위한 질문이라 답의 성격이 다르다.
+      fromEmployeeName?: string;
     }
   | { type: "end_session_request"; requestId: string; teamId: string };
