@@ -3,8 +3,12 @@ import type { WebSocket } from "ws";
 import type { DriverStatus, PlanningDoc, RunnerToServerEvent, ServerToRunnerEvent, Ticket } from "@ai-crew/shared";
 import {
   ensureAssigned,
+  findActiveTicketForProject,
+  findNextQueuedForProject,
   findOrphaned,
   getTicket,
+  isProjectBusyStatus,
+  projectKey,
   recordHeartbeat,
   saveTicketMemory,
   ticketEvents,
@@ -18,6 +22,24 @@ import { broadcastToUi } from "./ui.js";
 
 const runnerSockets = new Set<WebSocket>();
 let subscribed = false;
+// 프로젝트 폴더 하나당 배정 판단을 직렬화하는 락 (tickets/store.ts의 withTicketLock과 같은 패턴).
+// 티켓 단위 락으로는 부족하다 - 막으려는 건 "서로 다른 두 티켓이 같은 폴더에 동시에 들어가는 것"이라
+// 검사와 배정이 한 덩어리로 묶여야 한다.
+const projectDispatchLocks = new Map<string, Promise<unknown>>();
+
+function withProjectLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const prev = projectDispatchLocks.get(key) ?? Promise.resolve();
+  const run = prev.then(fn);
+  projectDispatchLocks.set(
+    key,
+    run.then(
+      () => undefined,
+      () => undefined
+    )
+  );
+  return run;
+}
+
 // 팀마다 팀장이 독립적으로 바쁠 수 있다 - teamId별로 추적한다.
 const busyTeams = new Set<string>();
 const pendingDriverStatusChecks = new Map<string, (status: Record<string, DriverStatus>) => void>();
@@ -62,6 +84,12 @@ export function registerRunnerWs(app: FastifyInstance) {
       broadcastToUi({ type: "ticket_updated", ticket });
       if (ticket.status === "queued") {
         pushToAnyRunner(ticket.id).catch((err) => app.log.error(err, "pushToAnyRunner failed"));
+      } else if (!isProjectBusyStatus(ticket.status)) {
+        // 이 티켓이 프로젝트 폴더를 놓았다 - 같은 폴더에서 기다리던 다음 티켓을 내보낸다.
+        // (여기서 배정되는 티켓은 assigned = busy 상태가 되므로 이 분기가 다시 타지 않는다.)
+        releaseNextQueuedForProject(ticket.project).catch((err) =>
+          app.log.error(err, "releaseNextQueuedForProject failed")
+        );
       }
     });
   }
@@ -395,10 +423,53 @@ export async function pushToAnyRunner(ticketId: string) {
 async function pushJob(socket: WebSocket, ticketId: string) {
   const ticket = await getTicket(ticketId);
   if (!ticket) return;
-  // ensureAssigned는 락으로 직렬화되고, 이미 assigned/running이면 그대로 반환한다 -
-  // recoverAndAssign과 신규 티켓 이벤트가 동시에 같은 티켓을 밀어도 안전하다.
-  // 상태가 실제로 바뀌면 ensureAssigned 내부에서 ticketEvents("changed")가 UI 브로드캐스트까지 처리한다.
-  const assigned = ticket.status === "queued" ? await ensureAssigned(ticketId) : ticket;
-  const event: ServerToRunnerEvent = { type: "job_assign", ticket: assigned };
+
+  // 아직 큐에 있는 티켓만 프로젝트 점유 검사를 한다. 이미 assigned/running인 티켓을 다시
+  // 미는 건 러너 재연결 복구 경로(recoverAndAssign)라, 여기서 막으면 되살아나지 못하고 영영
+  // 멈춘다 - 그건 이 검사가 막으려는 상황(새 티켓을 남의 작업 위에 얹는 것)이 아니다.
+  if (ticket.status === "queued") {
+    // 같은 폴더에 대한 배정 판단을 직렬화한다. 이게 없으면 티켓 두 개가 거의 동시에 큐에
+    // 들어왔을 때 양쪽 다 "지금 비어있다"를 보고 둘 다 나가버린다.
+    await withProjectLock(projectKey(ticket.project), async () => {
+      const active = await findActiveTicketForProject(ticket.project, ticket.id);
+      if (active) {
+        broadcastToUi({
+          type: "log_line",
+          ticketId: ticket.id,
+          line:
+            `[대기] 같은 프로젝트에서 "${active.title}"(${active.role})가 아직 작업 중이라 ` +
+            `이 티켓은 큐에서 기다립니다. 앞 티켓이 끝나면 자동으로 시작됩니다.`,
+          ts: new Date().toISOString(),
+        });
+        return;
+      }
+      // ensureAssigned는 락으로 직렬화되고, 이미 assigned/running이면 그대로 반환한다 -
+      // recoverAndAssign과 신규 티켓 이벤트가 동시에 같은 티켓을 밀어도 안전하다. 상태가 실제로
+      // 바뀌면 ensureAssigned 내부에서 ticketEvents("changed")가 UI 브로드캐스트까지 처리한다.
+      const assigned = await ensureAssigned(ticketId);
+      const event: ServerToRunnerEvent = { type: "job_assign", ticket: assigned };
+      socket.send(JSON.stringify(event));
+    });
+    return;
+  }
+
+  const event: ServerToRunnerEvent = { type: "job_assign", ticket };
   socket.send(JSON.stringify(event));
+}
+
+// 앞 티켓이 그 폴더를 놓았을 때(review/done/failed/blocked 등으로 빠졌을 때) 같은 프로젝트에서
+// 기다리던 다음 티켓을 하나만 내보낸다. 여러 번 불려도 안전하다 - 매번 점유 여부를 다시 확인하고,
+// 큐에서 가장 오래된 것 하나만 집는다.
+async function releaseNextQueuedForProject(project: string): Promise<void> {
+  await withProjectLock(projectKey(project), async () => {
+    const active = await findActiveTicketForProject(project);
+    if (active) return;
+    const next = await findNextQueuedForProject(project);
+    if (!next) return;
+    const socket = [...runnerSockets][0];
+    if (!socket) return; // 러너가 없으면 다음 연결 때 recoverAndAssign이 집어간다
+    const assigned = await ensureAssigned(next.id);
+    const event: ServerToRunnerEvent = { type: "job_assign", ticket: assigned };
+    socket.send(JSON.stringify(event));
+  });
 }

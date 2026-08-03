@@ -18,6 +18,69 @@ export const ticketEvents = new EventEmitter();
 
 const ORPHAN_STATUSES: TicketStatus[] = ["queued", "assigned", "running"];
 
+// 직원 세션이 실제로 그 프로젝트 폴더에 파일을 쓰고 있는 상태들. 직원은 격리된 워크트리가 아니라
+// 프로젝트 실제 폴더에 직접 작업하므로(runner/src/employees/prepare.ts), 같은 폴더에 이 상태의
+// 티켓이 둘 이상 있으면 서로의 파일을 덮어쓴다 - 실제로 두 세션이 같은 트리를 동시에 고치다가
+// 한쪽이 "커밋할 수 없다"며 blocked를 낸 사고가 있었다. review/blocked/needs_approval/done/failed는
+// 세션이 이미 끝난 상태라 폴더를 잡고 있지 않으므로 여기 포함하지 않는다.
+const PROJECT_BUSY_STATUSES: TicketStatus[] = ["assigned", "running", "qa_review"];
+
+// 프로젝트 문자열이 절대경로일 수도, 이름만일 수도 있어서(팀장이 둘 다 넘길 수 있다) 마지막
+// 경로 세그먼트를 소문자로 비교한다. 서버는 리눅스 컨테이너라 node:path가 윈도우 "\"를 못
+// 알아보므로 직접 자른다. routes/tickets.ts의 등록 프로젝트 보정도 같은 규칙을 쓴다.
+export function projectKey(project: string): string {
+  const parts = project.split(/[\\/]/).filter(Boolean);
+  return (parts[parts.length - 1] ?? project).toLowerCase();
+}
+
+// 이만큼 아무 소식이 없으면 그 세션은 죽은 것으로 보고 폴더를 놓은 것으로 취급한다. 세션이
+// 크래시하거나 러너가 강제 종료되면 티켓이 running인 채로 영영 남는데(지금은 이 상태를 정리하는
+// 장치가 없다), 그걸 살아있다고 믿으면 그 프로젝트에 다시는 티켓을 못 내보낸다. 직원이 긴 빌드나
+// 테스트를 도는 동안에도 하트비트 간격이 몇 분씩 벌어질 수 있어 넉넉하게 잡았다.
+const STALE_AFTER_MS = 15 * 60 * 1000;
+
+// 이 프로젝트 폴더를 지금 잡고 있는 티켓 (있으면 새 티켓을 내보내면 안 된다).
+export async function findActiveTicketForProject(
+  project: string,
+  excludeTicketId?: string
+): Promise<Ticket | null> {
+  const rows = await prisma.ticket.findMany({
+    where: { status: { in: PROJECT_BUSY_STATUSES } },
+    orderBy: { createdAt: "asc" },
+  });
+  const key = projectKey(project);
+  const cutoff = Date.now() - STALE_AFTER_MS;
+  const match = rows.find((r) => {
+    if (r.id === excludeTicketId || projectKey(r.project) !== key) return false;
+    // 하트비트가 아직 없는 티켓(막 assigned된 직후)은 updatedAt을 살아있다는 신호로 본다.
+    const lastSignOfLife = Math.max(r.lastHeartbeatAt?.getTime() ?? 0, r.updatedAt.getTime());
+    if (lastSignOfLife < cutoff) {
+      console.warn(
+        `[dispatch] 티켓 ${r.id}(${r.status})가 ${Math.round((Date.now() - lastSignOfLife) / 60000)}분째 ` +
+          `응답이 없어 죽은 세션으로 보고 ${r.project} 점유를 해제합니다.`
+      );
+      return false;
+    }
+    return true;
+  });
+  return match ? toTicket(match) : null;
+}
+
+// 그 폴더가 비었을 때 다음으로 내보낼 티켓 (먼저 만들어진 것부터).
+export async function findNextQueuedForProject(project: string): Promise<Ticket | null> {
+  const rows = await prisma.ticket.findMany({
+    where: { status: "queued" },
+    orderBy: { createdAt: "asc" },
+  });
+  const key = projectKey(project);
+  const match = rows.find((r) => projectKey(r.project) === key);
+  return match ? toTicket(match) : null;
+}
+
+export function isProjectBusyStatus(status: TicketStatus): boolean {
+  return PROJECT_BUSY_STATUSES.includes(status);
+}
+
 // 같은 티켓에 대한 상태 변경(전이/메타 갱신)을 순서대로 처리하기 위한 락.
 // 러너 재연결 시 recoverAndAssign과 소켓 메시지 핸들러가 동시에 같은 티켓을 건드릴 수 있어
 // (예: 새 연결의 assign 시도와 직원이 보낸 job_status가 겹침) 직렬화가 필요하다.
