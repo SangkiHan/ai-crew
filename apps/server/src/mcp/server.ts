@@ -41,8 +41,10 @@ server.tool(
 
 server.tool(
   "list_employees",
-  "현재 등록된 직원 목록을 담당 업무 설명과 함께 반환합니다. 티켓을 만들기 전에 " +
-    "이걸로 어떤 직원(role)에게 맡길지 확인하세요.",
+  "현재 등록된 직원 목록을 담당 업무 설명(taskDescription)과 담당 프로젝트(projects)와 함께 " +
+    "반환합니다. 티켓을 만들기 전에 이걸로 어떤 직원(role)에게 맡길지 확인하세요. projects가 " +
+    "비어있지 않은 직원에게는 그 목록에 있는 프로젝트의 티켓만 만들 수 있습니다(그 외에는 서버가 " +
+    "거부합니다). projects가 빈 배열이면 팀의 모든 프로젝트를 담당한다는 뜻입니다.",
   {},
   async () => {
     const employees = await listEmployees(TEAM_ID!);

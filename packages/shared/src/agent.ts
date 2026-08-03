@@ -20,6 +20,9 @@ export interface Employee {
   driver: Driver;
   model?: string;
   taskDescription: string;
+  // 이 직원이 담당하는 프로젝트(Team.projects 중 선택한 것들). 비어있으면 팀의 모든
+  // 프로젝트를 담당한다는 뜻이다 - 이 필드가 생기기 전에 만들어진 직원이 그대로 동작한다.
+  projects: string[];
   allowedTools: string[];
   requireApproval: string[];
   createdAt: string;

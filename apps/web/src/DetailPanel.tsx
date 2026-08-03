@@ -267,6 +267,14 @@ export function DetailPanel() {
           {employee!.model ? ` · ${employee!.model}` : ""}
         </p>
         <p className="mt-1 text-xs text-slate-500">{employee!.taskDescription}</p>
+        {employee!.projects.length > 0 && (
+          <p className="mt-1 text-xs text-slate-500" title={employee!.projects.join("\n")}>
+            담당 프로젝트:{" "}
+            {employee!.projects
+              .map((p) => p.split(/[\\/]/).filter(Boolean).pop() ?? p)
+              .join(", ")}
+          </p>
+        )}
       </div>
 
       <div className="flex items-center justify-between">

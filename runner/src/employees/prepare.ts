@@ -99,7 +99,7 @@ export async function prepareEmployeeJob(
     : "";
   const message = `${qaContext}## 티켓: ${ticket.title}\n\n${ticket.spec}${formatPendingPeerMessages(pendingPeerMessages)}`;
 
-  return { cwd, message, systemPrompt: buildEmployeePrompt(employee.taskDescription), baseSha };
+  return { cwd, message, systemPrompt: buildEmployeePrompt(employee), baseSha };
 }
 
 // QA 검증 단계 전용 준비 함수. 개발자가 작업한 것과 같은 프로젝트 실제 폴더를 그대로 쓴다 -
@@ -127,7 +127,7 @@ export async function prepareQaJob(
     `구체적인 수정 지시(무엇을 어떻게 고쳐야 하는지)를 note에 담아 호출하세요. ` +
     `직접 코드를 고치지 마세요 - 검증과 판정만 하는 역할입니다.`;
 
-  return { cwd, message, systemPrompt: buildEmployeePrompt(qaEmployee.taskDescription), baseSha: ticket.baseSha };
+  return { cwd, message, systemPrompt: buildEmployeePrompt(qaEmployee), baseSha: ticket.baseSha };
 }
 
 // QA 세션이 끝났는데 report_qa_result를 안 불렀으면(세션이 그냥 종료됨) 안전망으로 통과 처리한다.

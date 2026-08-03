@@ -1,9 +1,21 @@
-import type { PeerMessage } from "@ai-crew/shared";
+import type { Employee, PeerMessage } from "@ai-crew/shared";
+
+// 담당 프로젝트가 지정된 직원에게만 붙는 문단. 비어있으면(= 팀의 모든 프로젝트 담당) 아무것도
+// 붙이지 않는다 - 제약이 없는데 "담당은 다음뿐"이라고 쓰면 오히려 잘못된 경계를 만든다.
+function buildProjectScope(projects: string[]): string {
+  if (projects.length === 0) return "";
+  const list = projects.map((p) => `- ${p}`).join("\n");
+  return (
+    `\n\n당신의 담당 프로젝트는 다음뿐입니다:\n${list}\n` +
+    `이 밖의 프로젝트는 당신 담당이 아닙니다 - 직접 고치지 말고 report_blocked로 팀장에게 알리거나, ` +
+    `내용 확인만 필요하면 ask_employee로 그 프로젝트 담당 직원에게 물어보세요.`
+  );
+}
 
 // 웹 UI로 추가된 직원은 backend.md 같은 손으로 쓴 프롬프트가 없다 - taskDescription 하나로부터
 // 매번 생성한다. 모든 직원에게 공통으로 필요한 운영 규칙(격리, 커밋, 에스컬레이션)은 여기 고정한다.
-export function buildEmployeePrompt(taskDescription: string): string {
-  return `당신은 다음 업무를 담당하는 AI 직원입니다: ${taskDescription}
+export function buildEmployeePrompt(employee: Employee): string {
+  return `당신은 다음 업무를 담당하는 AI 직원입니다: ${employee.taskDescription}${buildProjectScope(employee.projects)}
 
 - 특정 언어나 프레임워크에 고정되어 있지 않습니다. 작업을 시작하기 전에 대상 프로젝트의 빌드
   파일과 기존 코드를 보고 실제 사용 중인 스택을 파악한 뒤 그에 맞춰 작업하세요.

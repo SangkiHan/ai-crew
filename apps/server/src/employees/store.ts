@@ -10,6 +10,7 @@ function toEmployee(row: {
   driver: string;
   model: string | null;
   taskDescription: string;
+  projects: string[];
   allowedTools: string[];
   requireApproval: string[];
   createdAt: Date;
@@ -23,6 +24,7 @@ function toEmployee(row: {
     driver: row.driver as Employee["driver"],
     model: row.model ?? undefined,
     taskDescription: row.taskDescription,
+    projects: row.projects,
     allowedTools: row.allowedTools,
     requireApproval: row.requireApproval,
     createdAt: row.createdAt.toISOString(),
@@ -62,6 +64,7 @@ export async function createEmployee(input: {
   driver: string;
   model?: string;
   taskDescription: string;
+  projects: string[];
   allowedTools: string[];
   requireApproval: string[];
 }): Promise<Employee> {
@@ -77,6 +80,7 @@ export async function updateEmployee(
     driver: string;
     model: string | null;
     taskDescription: string;
+    projects: string[];
     allowedTools: string[];
     requireApproval: string[];
   }>
@@ -87,4 +91,17 @@ export async function updateEmployee(
 
 export async function deleteEmployee(id: string): Promise<void> {
   await prisma.employee.delete({ where: { id } });
+}
+
+// 팀의 담당 프로젝트 목록이 바뀌었을 때, 더 이상 그 팀 목록에 없는 프로젝트를 직원들의
+// projects에서 걷어낸다. 이걸 안 하면 "웹 체크박스에는 안 보이는데 티켓 검증은 통과하는"
+// 유령 참조가 남는다 (직원 projects는 항상 Team.projects의 부분집합이어야 한다).
+export async function pruneEmployeeProjects(teamId: string, allowedProjects: string[]): Promise<void> {
+  const rows = await prisma.employee.findMany({ where: { teamId } });
+  await Promise.all(
+    rows
+      .map((row) => ({ row, next: row.projects.filter((p) => allowedProjects.includes(p)) }))
+      .filter(({ row, next }) => next.length !== row.projects.length)
+      .map(({ row, next }) => prisma.employee.update({ where: { id: row.id }, data: { projects: next } }))
+  );
 }

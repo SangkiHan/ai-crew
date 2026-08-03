@@ -106,6 +106,11 @@ model Employee {
   driver          String // claude | gemini | codex
   model           String?
   taskDescription String // 팀장이 위임 판단에 쓰는 자유 텍스트 ("puppynote-server 백엔드 담당" 등)
+  // 이 직원이 담당하는 프로젝트(Team.projects 중 웹 UI에서 체크한 것들). 팀장이 담당 아닌
+  // 직원에게 티켓을 만들면 서버가 거부한다(routes/tickets.ts). Team.projects와 같은 이유로
+  // @default([])를 둔다 - 기존 직원 행이 db push에서 살아남고, 빈 배열은 "팀의 모든 프로젝트
+  // 담당"(제약 없음)을 뜻해서 이 필드가 생기기 전 직원들이 그대로 동작한다.
+  projects        String[] @default([])
   allowedTools    String[]
   requireApproval String[]
   createdAt       DateTime @default(now())
