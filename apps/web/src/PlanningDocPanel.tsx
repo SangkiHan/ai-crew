@@ -22,24 +22,69 @@ const STATUS_COLOR: Record<PlanningDocStatus, string> = {
 // 이어진다 (ChatBar에서 겪은 것과 같은 버그) - 고정된 참조 하나로 둔다.
 const EMPTY_DOCS: PlanningDoc[] = [];
 
+// 승인/거부/수정요청을 눌렀을 때 화면에 띄우는 결과. 지금까지는 아무 표시가 없어서 눌렀는지조차
+// 알 수 없었다. tone에 따라 색이 다르고, ok일 때만 잠시 뒤 패널이 자동으로 닫힌다.
+// autoClose는 tone과 따로 둔다 - 거부도 성공(초록)이지만 패널을 닫을 이유는 없다. 승인만
+// 닫는다(팀장이 곧 채팅에 답하기 시작하므로 그쪽으로 시선을 옮기는 게 맞다).
+type ActionResult = { tone: "ok" | "warn" | "error"; text: string; autoClose?: boolean };
+
+const AUTO_CLOSE_MS = 1800;
+
 export function PlanningDocPanel({ teamId, onClose }: { teamId: string; onClose: () => void }) {
   const docs = useStore((s) => s.planningDocsByTeam[teamId] ?? EMPTY_DOCS);
   const setPlanningDocs = useStore((s) => s.setPlanningDocs);
+  const upsertPlanningDoc = useStore((s) => s.upsertPlanningDoc);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [revisionText, setRevisionText] = useState("");
+  const [result, setResult] = useState<ActionResult | null>(null);
 
   useEffect(() => {
     fetchPlanningDocs(teamId).then((list) => setPlanningDocs(teamId, list)).catch(console.error);
   }, [teamId, setPlanningDocs]);
 
+  useEffect(() => {
+    if (!result?.autoClose) return;
+    const timer = setTimeout(onClose, AUTO_CLOSE_MS);
+    return () => clearTimeout(timer);
+  }, [result, onClose]);
+
   const sorted = [...docs].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const selected = sorted.find((d) => d.id === selectedId) ?? sorted[0] ?? null;
 
+  function toMessage(err: unknown): string {
+    return err instanceof Error ? err.message : String(err);
+  }
+
   async function handleApprove(doc: PlanningDoc) {
     setBusy(true);
+    setResult(null);
     try {
-      await approvePlanningDoc(doc.id);
+      const { doc: updated, managerInvocation } = await approvePlanningDoc(doc.id);
+      // WS 이벤트를 기다리지 않고 바로 반영한다 - 눌러도 "검토 대기"가 그대로 남아 있으면
+      // 승인이 됐는지 알 수 없다.
+      upsertPlanningDoc(updated);
+      if (managerInvocation.ok) {
+        setResult({
+          tone: "ok",
+          text: "승인 완료 - 팀장에게 개발 티켓 발행을 요청했습니다.",
+          autoClose: true,
+        });
+      } else {
+        // 승인 자체는 됐지만 팀장 호출이 거절된 경우. 이대로 두면 "승인했는데 개발이 시작되지
+        // 않는" 상태가 되므로, 사용자가 뭘 해야 하는지까지 알려준다.
+        setResult({
+          tone: "warn",
+          text:
+            managerInvocation.reason === "busy"
+              ? "승인은 완료됐지만 팀장이 다른 작업 중이라 개발 티켓 발행 요청이 전달되지 않았습니다. " +
+                '팀장이 끝나면 채팅에 "승인된 기획서대로 개발 티켓을 발행해줘"라고 보내주세요.'
+              : "승인은 완료됐지만 러너가 연결되어 있지 않아 팀장에게 전달되지 않았습니다. " +
+                '러너를 실행한 뒤 채팅에 "승인된 기획서대로 개발 티켓을 발행해줘"라고 보내주세요.',
+        });
+      }
+    } catch (err) {
+      setResult({ tone: "error", text: `승인에 실패했습니다: ${toMessage(err)}` });
     } finally {
       setBusy(false);
     }
@@ -47,8 +92,12 @@ export function PlanningDocPanel({ teamId, onClose }: { teamId: string; onClose:
 
   async function handleReject(doc: PlanningDoc) {
     setBusy(true);
+    setResult(null);
     try {
-      await rejectPlanningDoc(doc.id);
+      upsertPlanningDoc(await rejectPlanningDoc(doc.id));
+      setResult({ tone: "ok", text: "이 기획서를 거부했습니다." });
+    } catch (err) {
+      setResult({ tone: "error", text: `거부에 실패했습니다: ${toMessage(err)}` });
     } finally {
       setBusy(false);
     }
@@ -58,9 +107,14 @@ export function PlanningDocPanel({ teamId, onClose }: { teamId: string; onClose:
     const message = revisionText.trim();
     if (!message) return;
     setBusy(true);
+    setResult(null);
     try {
-      await revisePlanningDoc(doc.id, message);
+      upsertPlanningDoc(await revisePlanningDoc(doc.id, message));
       setRevisionText("");
+      // 수정 요청은 기획자가 다시 쓰는 동안 여기서 지켜보는 게 자연스러우니 닫지 않는다.
+      setResult({ tone: "warn", text: "수정 요청을 보냈습니다. 기획자가 초안을 다시 다듬는 중입니다…" });
+    } catch (err) {
+      setResult({ tone: "error", text: `수정 요청에 실패했습니다: ${toMessage(err)}` });
     } finally {
       setBusy(false);
     }
@@ -85,7 +139,10 @@ export function PlanningDocPanel({ teamId, onClose }: { teamId: string; onClose:
               sorted.map((doc) => (
                 <button
                   key={doc.id}
-                  onClick={() => setSelectedId(doc.id)}
+                  onClick={() => {
+                    setSelectedId(doc.id);
+                    setResult(null); // 다른 기획서로 옮기면 이전 문서에 대한 결과 문구는 지운다
+                  }}
                   className={[
                     "mb-1 block w-full rounded-md px-3 py-2 text-left text-xs",
                     selected?.id === doc.id ? "bg-slate-800" : "hover:bg-slate-800/60",
@@ -120,6 +177,24 @@ export function PlanningDocPanel({ teamId, onClose }: { teamId: string; onClose:
                   </div>
                 )}
               </div>
+              {result && (
+                <div
+                  className={[
+                    "mx-5 mb-3 rounded-md border px-3 py-2 text-sm",
+                    result.tone === "ok"
+                      ? "border-emerald-700/60 bg-emerald-950/40 text-emerald-300"
+                      : result.tone === "warn"
+                        ? "border-amber-700/60 bg-amber-950/40 text-amber-300"
+                        : "border-rose-700/60 bg-rose-950/40 text-rose-300",
+                  ].join(" ")}
+                >
+                  {result.text}
+                  {result.autoClose && (
+                    <span className="ml-1 text-xs opacity-70">(잠시 후 이 창이 닫힙니다)</span>
+                  )}
+                </div>
+              )}
+
               {selected.status === "review" && (
                 <div className="border-t border-slate-800 px-5 py-3">
                   <div className="mb-2 flex gap-2">

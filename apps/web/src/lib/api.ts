@@ -93,9 +93,18 @@ export function fetchPlanningDocs(teamId: string): Promise<PlanningDoc[]> {
   );
 }
 
-export function approvePlanningDoc(id: string): Promise<{ doc: PlanningDoc }> {
+// 승인은 두 가지 일을 한다: 기획서를 approved로 바꾸고, 팀장에게 "이 기획대로 개발 티켓을
+// 발행하라"고 요청한다. 뒤쪽은 팀장이 이미 다른 작업 중이거나(busy) 러너가 안 붙어 있으면
+// (no_runner) 조용히 거절될 수 있다 - 승인은 됐는데 개발이 시작 안 되는 상태라 반드시 UI에
+// 알려야 해서 결과를 그대로 받아온다.
+export interface ApprovePlanningDocResult {
+  doc: PlanningDoc;
+  managerInvocation: { ok: true; requestId: string } | { ok: false; reason: "busy" | "no_runner" };
+}
+
+export function approvePlanningDoc(id: string): Promise<ApprovePlanningDocResult> {
   return fetch(`/api/planning-docs/${id}/approve`, { method: "POST" }).then((res) =>
-    json<{ doc: PlanningDoc }>(res)
+    json<ApprovePlanningDocResult>(res)
   );
 }
 

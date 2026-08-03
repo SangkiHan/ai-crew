@@ -66,6 +66,9 @@ export function OrgChart() {
   // 바뀌어도 리렌더링되지 않는다. 두 상태를 직접 구독해 리렌더링을 트리거하고,
   // 계산은 getState()로 매번 새로 한다.
   const tickets = useStore((s) => s.tickets);
+  // 기획자 노드의 상태는 티켓이 아니라 기획서(PlanningDoc)에서 나온다 - 이것도 구독해야
+  // 기획서 상태가 바뀔 때 노드 색이 따라 바뀐다.
+  const planningDocsByTeam = useStore((s) => s.planningDocsByTeam);
   const consultingEmployeeCounts = useStore((s) => s.consultingEmployeeCounts);
   const consultingPairCounts = useStore((s) => s.consultingPairCounts);
   const setSelectedNode = useStore((s) => s.setSelectedNode);
@@ -183,7 +186,16 @@ export function OrgChart() {
 
     return { nodes, edges };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agents, teams, employees, managerStatusByTeam, tickets, consultingEmployeeCounts, consultingPairCounts]);
+  }, [
+    agents,
+    teams,
+    employees,
+    managerStatusByTeam,
+    tickets,
+    planningDocsByTeam,
+    consultingEmployeeCounts,
+    consultingPairCounts,
+  ]);
 
   return (
     <div className="h-full w-full">
