@@ -5,6 +5,8 @@ import {
   getTicket,
   listTickets,
   projectKey,
+  retryFailedTicket,
+  scheduleTicketRetry,
   saveTicketMemory,
   transitionTicket,
 } from "../tickets/store.js";
@@ -133,6 +135,38 @@ export function registerTicketRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: `cannot reject ticket in status ${ticket.status}` });
     }
     return transitionTicket(ticket.id, "failed");
+  });
+
+  app.post<{ Params: { id: string } }>("/api/tickets/:id/retry", async (req, reply) => {
+    const ticket = await getTicket(req.params.id);
+    if (!ticket) return reply.code(404).send({ error: "not found" });
+    if (ticket.status !== "failed") {
+      return reply.code(400).send({ error: `failed 상태의 티켓만 다시 실행할 수 있습니다 (현재: ${ticket.status})` });
+    }
+    // queued 변경 이벤트 구독자가 배정을 담당한다. 여기서 runner를 직접 호출하면 중복 배정된다.
+    return retryFailedTicket(ticket.id);
+  });
+
+  app.post<{
+    Params: { id: string };
+    Body: { retryAt?: string; delayMinutes?: number; reason: string };
+  }>("/api/tickets/:id/schedule-retry", async (req, reply) => {
+    const ticket = await getTicket(req.params.id);
+    if (!ticket) return reply.code(404).send({ error: "not found" });
+    if (ticket.status !== "failed") {
+      return reply.code(400).send({ error: `failed 상태의 티켓만 재실행 예약할 수 있습니다 (현재: ${ticket.status})` });
+    }
+    if (!req.body.reason?.trim()) return reply.code(400).send({ error: "reason is required" });
+    const retryAt = req.body.retryAt
+      ? new Date(req.body.retryAt)
+      : new Date(Date.now() + Math.max(1, req.body.delayMinutes ?? 60) * 60_000);
+    if (Number.isNaN(retryAt.getTime()) || retryAt <= new Date()) {
+      return reply.code(400).send({ error: "retryAt must be a future date" });
+    }
+    if (retryAt.getTime() > Date.now() + 7 * 24 * 60 * 60_000) {
+      return reply.code(400).send({ error: "retryAt must be within 7 days" });
+    }
+    return scheduleTicketRetry(ticket.id, retryAt, req.body.reason.trim());
   });
 
   // QA 직원의 report_qa_result MCP 툴이 호출하는 경로. 판정(통과/반려)에 따른 다음 상태 전이와

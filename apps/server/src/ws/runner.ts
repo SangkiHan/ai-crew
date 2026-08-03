@@ -233,8 +233,9 @@ export function notifyManagerOfTicketResult(
         : `직원 "${ticket.role}"의 티켓 작업이 실패로 종료됐습니다.\n\n` +
           `- 티켓: ${ticket.title}\n- 프로젝트: ${ticket.project}\n\n` +
           `## 직원의 마지막 보고\n${ticket.resultText ?? "(보고 없음)"}\n\n` +
-          `사용자에게 실패 사실과 사유를 전달하세요. 다른 직원으로 재시도가 필요하면 새 티켓을 ` +
-          `만들어 위임할 수 있습니다.`;
+          `사용량/session 제한으로 보이는 원문 오류라면 schedule_ticket_retry를 사용해 제한 해제 후 ` +
+          `자동 재실행을 예약하세요. 컨텍스트 초과·코드 오류·권한 오류라면 예약하지 말고 ` +
+          `사용자에게 실패 사실과 사유를 전달하세요.`;
   requestManagerInvocation(ticket.teamId, message);
 }
 

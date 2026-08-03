@@ -26,6 +26,7 @@ const MCP_TOOL_NAMES = [
   "create_planning_doc",
   "search_history",
   "ask_user",
+  "schedule_ticket_retry",
 ].map((tool) => `mcp__${MCP_SERVER_NAME}__${tool}`);
 
 export interface ManagerResult {

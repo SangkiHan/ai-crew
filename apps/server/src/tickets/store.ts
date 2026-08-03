@@ -118,6 +118,9 @@ function toTicket(row: {
   qaNote: string | null;
   resultText: string | null;
   diffSummary: string | null;
+  retryAt: Date | null;
+  retryReason: string | null;
+  retryCount: number;
 }): Ticket {
   return {
     id: row.id,
@@ -139,6 +142,9 @@ function toTicket(row: {
     qaNote: row.qaNote,
     resultText: row.resultText,
     diffSummary: row.diffSummary,
+    retryAt: row.retryAt ? row.retryAt.toISOString() : null,
+    retryReason: row.retryReason,
+    retryCount: row.retryCount,
   };
 }
 
@@ -210,6 +216,82 @@ export async function transitionTicket(id: string, to: TicketStatus): Promise<Ti
   if (to === "done") await resumeParentIfBlocked(ticket);
 
   return ticket;
+}
+
+// 실패한 실행을 같은 티켓으로 다시 시작한다. 이전 실행의 런타임 결과를 남겨두면 새 실행이
+// 시작되기 전까지 실패 정보가 최신 결과처럼 보이므로 실행 메타데이터와 함께 비운다.
+export async function retryFailedTicket(id: string): Promise<Ticket> {
+  return withTicketLock(id, async () => {
+    const current = await prisma.ticket.findUniqueOrThrow({ where: { id } });
+    if (current.status !== "failed") {
+      throw new Error(`failed 상태의 티켓만 다시 실행할 수 있습니다 (현재: ${current.status})`);
+    }
+    const row = await prisma.ticket.update({
+      where: { id },
+      data: {
+        status: "queued",
+        sessionId: null,
+        branch: null,
+        baseSha: null,
+        lastHeartbeatAt: null,
+        qaCycles: 0,
+        qaNote: null,
+        resultText: null,
+        diffSummary: null,
+        retryAt: null,
+        retryReason: null,
+      },
+    });
+    const ticket = toTicket(row);
+    ticketEvents.emit("changed", ticket);
+    return ticket;
+  });
+}
+
+export async function scheduleTicketRetry(id: string, retryAt: Date, reason: string): Promise<Ticket> {
+  return withTicketLock(id, async () => {
+    const current = await prisma.ticket.findUniqueOrThrow({ where: { id } });
+    if (current.status !== "failed") {
+      throw new Error(`failed 상태의 티켓만 재실행 예약할 수 있습니다 (현재: ${current.status})`);
+    }
+    const row = await prisma.ticket.update({
+      where: { id },
+      data: { retryAt, retryReason: reason, retryCount: { increment: 1 } },
+    });
+    const ticket = toTicket(row);
+    ticketEvents.emit("changed", ticket);
+    return ticket;
+  });
+}
+
+export async function releaseDueTicketRetries(): Promise<void> {
+  const due = await prisma.ticket.findMany({
+    where: { status: "failed", retryAt: { lte: new Date() } },
+    select: { id: true },
+  });
+  for (const { id } of due) {
+    await withTicketLock(id, async () => {
+      const current = await prisma.ticket.findUnique({ where: { id } });
+      if (!current || current.status !== "failed" || !current.retryAt || current.retryAt > new Date()) return;
+      const row = await prisma.ticket.update({
+        where: { id },
+        data: {
+          status: "queued",
+          retryAt: null,
+          retryReason: null,
+          sessionId: null,
+          branch: null,
+          baseSha: null,
+          lastHeartbeatAt: null,
+          qaCycles: 0,
+          qaNote: null,
+          resultText: null,
+          diffSummary: null,
+        },
+      });
+      ticketEvents.emit("changed", toTicket(row));
+    });
+  }
 }
 
 // 큐에 있던 티켓을 "배정됨"으로 표시한다. 이미 assigned/running 등으로 넘어갔다면

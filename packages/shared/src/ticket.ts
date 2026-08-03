@@ -39,6 +39,9 @@ export interface Ticket {
   // 이 티켓 브랜치의 실제 커밋 요약. null이면 아직 계산 전(진행 중), 빈 커밋이면 그 사실이
   // 문자열로 명시된다 - 승인 전에 "정말 반영할 코드가 있는지" 사람이 확인할 수 있게 한다.
   diffSummary: string | null;
+  retryAt: string | null;
+  retryReason: string | null;
+  retryCount: number;
 }
 
 export const TICKET_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
@@ -54,7 +57,7 @@ export const TICKET_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
   blocked: ["queued", "failed"],
   needs_approval: ["running", "failed"],
   done: [],
-  failed: [],
+  failed: ["queued"],
 };
 
 export function canTransition(from: TicketStatus, to: TicketStatus): boolean {

@@ -3,7 +3,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import spawn from "cross-spawn";
 import type { Employee, RunnerToServerEvent, Ticket } from "@ai-crew/shared";
-import { prepareEmployeeJob, reportDriverResult, toDisallowedBashPatterns } from "../employees/prepare.js";
+import {
+  clearDriverPid,
+  prepareEmployeeJob,
+  reportDriverResult,
+  toDisallowedBashPatterns,
+  writeDriverPid,
+} from "../employees/prepare.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, "..", "..", ".."); // drivers -> src -> runner -> repo root
@@ -80,16 +86,36 @@ export async function runCodexDriver(
     "-s",
     "workspace-write",
     "--skip-git-repo-check",
+    // 직원 실행은 Codex의 전역 세션/SQLite 상태를 공유할 필요가 없다. 다른 Codex 세션이
+    // 실행 중이어도 전역 잠금 때문에 headless 작업이 시작 단계에서 멈추지 않도록 한다.
+    "--ephemeral",
     ...(employee.model ? ["-m", employee.model] : []),
     ...buildMcpConfigFlags(EMPLOYEE_MCP_SERVER_ENTRY, AI_CREW_SERVER_URL, ticket.id, employee.name, employee.teamId),
   ];
   void toDisallowedBashPatterns; // codex sandbox 모델에는 이 패턴을 적용할 자리가 없다 (위 주석 참고)
 
+  let failureText = "";
   const success = await new Promise<boolean>((resolve) => {
-    const child = spawn("codex", args);
+    const child = spawn("codex", args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    writeDriverPid(ticket.id, child.pid).catch(() => {});
 
     let buffer = "";
     let stderr = "";
+    let settled = false;
+    const startupTimeout = setTimeout(() => {
+      if (settled) return;
+      const message = "[codex] 60초 동안 시작 이벤트가 없어 실행을 중단했습니다";
+      send({ type: "job_log", ticketId: ticket.id, line: message, ts: now() });
+      send({ type: "job_heartbeat", ticketId: ticket.id, ts: now() });
+      child.kill();
+    }, 60_000);
+
+    const emit = (line: string) => {
+      const text = line.trim();
+      if (!text) return;
+      send({ type: "job_log", ticketId: ticket.id, line: text, ts: now() });
+      send({ type: "job_heartbeat", ticketId: ticket.id, ts: now() });
+    };
 
     child.stdout!.on("data", (chunk: Buffer) => {
       buffer += chunk.toString();
@@ -100,37 +126,42 @@ export async function runCodexDriver(
         try {
           const event = JSON.parse(line);
           const summary = summarizeEvent(event);
-          if (summary) {
-            send({ type: "job_log", ticketId: ticket.id, line: summary, ts: now() });
-            send({ type: "job_heartbeat", ticketId: ticket.id, ts: now() });
-          }
+          emit(summary ?? `[codex] ${event.type ?? "이벤트"}`);
         } catch {
-          send({ type: "job_log", ticketId: ticket.id, line: `[codex] ${line}`, ts: now() });
+          emit(`[codex] ${line}`);
         }
       }
     });
 
     child.stderr!.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString();
+      const text = chunk.toString();
+      stderr += text;
+      failureText = stderr;
+      for (const line of text.split(/\r?\n/)) emit(`[codex] stderr: ${line}`);
     });
 
     child.on("error", (err) => {
-      send({ type: "job_log", ticketId: ticket.id, line: `[codex] 실행 실패: ${err.message}`, ts: now() });
+      if (settled) return;
+      settled = true;
+      clearTimeout(startupTimeout);
+      emit(`[codex] 실행 실패: ${err.message}`);
       resolve(false);
     });
 
     child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(startupTimeout);
       if (code !== 0) {
-        send({
-          type: "job_log",
-          ticketId: ticket.id,
-          line: `[codex] 비정상 종료 (code ${code}): ${stderr || "(stderr 없음)"}`,
-          ts: now(),
-        });
+        emit(`[codex] 비정상 종료 (code ${code}): ${stderr.trim() || "(stderr 없음)"}`);
       }
       resolve(code === 0);
     });
-  });
+  }).finally(() => clearDriverPid(ticket.id));
 
-  reportDriverResult(ticket, employee, { success, resultText: "", sessionId }, send);
+  reportDriverResult(ticket, employee, {
+    success,
+    resultText: success ? "" : failureText.trim(),
+    sessionId,
+  }, send);
 }

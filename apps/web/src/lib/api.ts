@@ -136,6 +136,10 @@ export function rejectTicket(id: string): Promise<Ticket> {
   return fetch(`/api/tickets/${id}/reject`, { method: "POST" }).then((res) => json<Ticket>(res));
 }
 
+export function retryTicket(id: string): Promise<Ticket> {
+  return fetch(`/api/tickets/${id}/retry`, { method: "POST" }).then((res) => json<Ticket>(res));
+}
+
 export function fetchEmployees(): Promise<Employee[]> {
   return fetch("/api/employees").then((res) => json<Employee[]>(res));
 }
@@ -159,7 +163,7 @@ export function createEmployee(input: {
 // updateTeamProjects와 같은 방식으로, UI가 항상 바뀐 전체 목록을 보낸다.
 export function updateEmployee(
   id: string,
-  input: Partial<{ taskDescription: string; projects: string[] }>
+  input: Partial<{ driver: string; model: string | null; taskDescription: string; projects: string[] }>
 ): Promise<Employee> {
   return fetch(`/api/employees/${id}`, {
     method: "PUT",

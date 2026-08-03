@@ -41,6 +41,10 @@ model Ticket {
   // "커밋 없음 - 변경사항이 반영되지 않습니다"). 승인 버튼을 눌러도 커밋이 없으면 머지해도
   // 실제로는 아무 코드도 반영되지 않는 사고("승인눌렀는데 코드가 없어")를 막기 위해 둔다.
   diffSummary     String?
+  // 팀장이 사용량 제한으로 판단해 예약한 자동 재시작 시각/사유.
+  retryAt         DateTime?
+  retryReason     String?
+  retryCount      Int      @default(0)
 }
 
 // 여러 팀을 만들 수 있게 하기 위한 모델. 팀마다 팀장 세션(대화)과 직원 명단이 분리된다 -
