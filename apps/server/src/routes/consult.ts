@@ -15,17 +15,16 @@ export function registerConsultRoutes(app: FastifyInstance) {
   // "다른 팀 직원에게는 못 물어본다"를 서버에서 강제한다.
   app.post<{ Body: ConsultBody }>("/api/consult", async (req, reply) => {
     const { teamId, employeeName, project, question, fromEmployeeName } = req.body;
-    if (!employeeName || !project || !question) {
-      return reply.code(400).send({ error: "employeeName, project, question are required" });
+    if (!teamId || !employeeName || !project || !question) {
+      return reply.code(400).send({ error: "teamId, employeeName, project, question are required" });
     }
-    const employee = await getEmployeeByName(employeeName);
+    // 이름은 팀 안에서만 유일하므로 팀과 함께 찾는다 - 이것만으로 "다른 팀 직원에게는 못 물어본다"가
+    // 자동으로 강제된다(예전에는 전역으로 찾고 나서 소속을 따로 확인했다).
+    const employee = await getEmployeeByName(teamId, employeeName);
     if (!employee) {
-      return reply.code(400).send({ error: `"${employeeName}" 직원을 찾을 수 없습니다` });
+      return reply.code(400).send({ error: `이 팀에 "${employeeName}" 직원이 없습니다` });
     }
-    if (teamId && employee.teamId !== teamId) {
-      return reply.code(403).send({ error: `"${employeeName}"은(는) 이 팀 소속이 아닙니다` });
-    }
-    const result = await requestConsultEmployee(employeeName, project, question, fromEmployeeName);
+    const result = await requestConsultEmployee(teamId, employeeName, project, question, fromEmployeeName);
     if (!result.success) return reply.code(500).send({ error: result.error ?? "알 수 없는 오류" });
     return { answer: result.answer };
   });

@@ -29,15 +29,16 @@ interface StoreState {
   chatHistoryLoadedTeamIds: Set<string>;
   planningDocsByTeam: Record<string, PlanningDoc[]>;
   selectedNodeId: string | null;
-  // ask_employee(consult)로 지금 실시간 소통 중인 직원 이름 -> 동시 진행 중인 상담 개수.
+  // ask_employee(consult)로 지금 실시간 소통 중인 직원(employeeKey = "팀id|이름") -> 동시
+  // 진행 중인 상담 개수. 이름만으로 키를 잡으면 다른 팀의 동명이인 노드까지 같이 켜진다.
   // 개수로 세는 이유: 같은 직원(특히 답변자 쪽)이 동시에 여러 상담의 대상이 될 수 있어
   // 단순 on/off로는 하나가 끝났을 때 다른 하나가 아직 진행 중인데도 표시가 꺼져버린다.
   // org chart 카드에 "상담 중" 표시를 띄우기 위한 것으로, 티켓 상태와 무관하게 서버가
   // 직접 브로드캐스트한다.
   consultingEmployeeCounts: Map<string, number>;
-  // 어떤 두 직원이 서로 상담 중인지("A|B" 형태 정렬된 키) -> 동시 진행 개수. org chart에
-  // 두 직원 카드를 잇는 선을 그리기 위한 것 - 질문자/답변자 이름이 둘 다 있을 때만 채워진다
-  // (기획 세션이 물어본 경우처럼 질문자 쪽 이름이 없으면 선을 그릴 대상이 없다).
+  // 어떤 두 직원이 서로 상담 중인지("팀id|A|B" 형태, 이름 부분은 정렬됨) -> 동시 진행 개수.
+  // org chart에 두 직원 카드를 잇는 선을 그리기 위한 것 - 질문자/답변자 이름이 둘 다 있을 때만
+  // 채워진다 (기획 세션이 물어본 경우처럼 질문자 쪽 이름이 없으면 선을 그릴 대상이 없다).
   consultingPairCounts: Map<string, number>;
 
   setAgents: (agents: AgentConfig[]) => void;
@@ -53,11 +54,16 @@ interface StoreState {
   endSessionForTeam: (teamId: string) => Promise<void>;
 
   employeesForTeam: (teamId: string) => Employee[];
-  ticketsForRole: (role: string) => Ticket[];
+  ticketsForRole: (teamId: string, role: string) => Ticket[];
   statusForEmployee: (employee: Employee) => "idle" | "waiting" | "busy" | "attention" | "consulting";
 }
 
 const MAX_LOG_LINES = 500;
+
+// 직원 이름은 팀 안에서만 유일하므로, 이름을 키로 쓰는 곳은 반드시 팀과 묶어야 한다.
+export function employeeKey(teamId: string, name: string): string {
+  return `${teamId}|${name}`;
+}
 
 export const useStore = create<StoreState>((set, get) => ({
   agents: [],
@@ -182,14 +188,16 @@ export const useStore = create<StoreState>((set, get) => ({
       set((s) => {
         const nextCounts = new Map(s.consultingEmployeeCounts);
         for (const name of event.employeeNames) {
-          const count = nextCounts.get(name) ?? 0;
+          const key = employeeKey(event.teamId, name);
+          const count = nextCounts.get(key) ?? 0;
           const updated = event.status === "consulting" ? count + 1 : Math.max(0, count - 1);
-          if (updated === 0) nextCounts.delete(name);
-          else nextCounts.set(name, updated);
+          if (updated === 0) nextCounts.delete(key);
+          else nextCounts.set(key, updated);
         }
         const nextPairs = new Map(s.consultingPairCounts);
         if (event.employeeNames.length === 2) {
-          const key = [...event.employeeNames].sort().join("|");
+          // 상담은 항상 같은 팀 안에서 일어나므로 팀 하나로 두 참여자를 함께 식별할 수 있다.
+          const key = `${event.teamId}|${[...event.employeeNames].sort().join("|")}`;
           const count = nextPairs.get(key) ?? 0;
           const updated = event.status === "consulting" ? count + 1 : Math.max(0, count - 1);
           if (updated === 0) nextPairs.delete(key);
@@ -229,7 +237,10 @@ export const useStore = create<StoreState>((set, get) => ({
 
   employeesForTeam: (teamId) => get().employees.filter((e) => e.teamId === teamId),
 
-  ticketsForRole: (role) => Object.values(get().tickets).filter((t) => t.role === role),
+  // 직원 이름(= 티켓의 role)은 팀 안에서만 유일하다 - 팀을 같이 보지 않으면 다른 팀 동명이인의
+  // 티켓까지 딸려와서 엉뚱한 노드에 "작업중"이 켜진다.
+  ticketsForRole: (teamId, role) =>
+    Object.values(get().tickets).filter((t) => t.teamId === teamId && t.role === role),
 
   // 티켓의 role은 항상 "원래 담당 개발자"고, qa_review 동안에도 바뀌지 않는다 - QA 직원이
   // 실제로 세션을 돌리는 동안에도 QA 직원의 role로는 매칭되는 티켓이 하나도 없어서 QA 노드에
@@ -239,8 +250,10 @@ export const useStore = create<StoreState>((set, get) => ({
   // 받아도 되는 상태이므로 queued/assigned(곧 시작할 일이 있는 대기)와 묶지 않고 idle로
   // 취급한다 (사용자 지적: "QA한테 넘기면 할 일 없는 직원은 대기중이어야 한다").
   statusForEmployee: (employee) => {
-    if ((get().consultingEmployeeCounts.get(employee.name) ?? 0) > 0) return "consulting";
-    const tickets = get().ticketsForRole(employee.name);
+    if ((get().consultingEmployeeCounts.get(employeeKey(employee.teamId, employee.name)) ?? 0) > 0) {
+      return "consulting";
+    }
+    const tickets = get().ticketsForRole(employee.teamId, employee.name);
     if (isQaEmployee(employee.taskDescription)) {
       const teamTickets = Object.values(get().tickets).filter((t) => t.teamId === employee.teamId);
       if (teamTickets.some((t) => t.status === "qa_review")) return "busy";

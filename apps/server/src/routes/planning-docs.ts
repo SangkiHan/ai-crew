@@ -32,10 +32,10 @@ export function registerPlanningDocRoutes(app: FastifyInstance) {
     if (!teamId || !employeeName || !request) {
       return reply.code(400).send({ error: "teamId, employeeName, request are required" });
     }
-    const employee = await getEmployeeByName(employeeName);
-    if (!employee) return reply.code(400).send({ error: `"${employeeName}" 직원을 찾을 수 없습니다` });
-    if (employee.teamId !== teamId) {
-      return reply.code(403).send({ error: `"${employeeName}"은(는) 이 팀 소속이 아닙니다` });
+    // 팀 안에서만 찾는다 - 다른 팀의 동명이인에게 기획을 맡기지 않기 위해서다.
+    const employee = await getEmployeeByName(teamId, employeeName);
+    if (!employee) {
+      return reply.code(400).send({ error: `이 팀에 "${employeeName}" 직원이 없습니다` });
     }
     const doc = await createPlanningDoc({ teamId, employeeName, request });
     requestPlanningDocJob(doc, request);

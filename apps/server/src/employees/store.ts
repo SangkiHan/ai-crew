@@ -45,8 +45,10 @@ export async function getEmployee(id: string): Promise<Employee | null> {
   return row ? toEmployee(row) : null;
 }
 
-export async function getEmployeeByName(name: string): Promise<Employee | null> {
-  const row = await prisma.employee.findUnique({ where: { name } });
+// 이름은 팀 안에서만 유일하다 - 다른 팀에 같은 이름의 직원이 있을 수 있으므로 반드시 팀과 함께
+// 찾는다. teamId를 모르는 호출자는 없어야 한다(티켓/기획서/상담 모두 자기 팀 안에서 일어난다).
+export async function getEmployeeByName(teamId: string, name: string): Promise<Employee | null> {
+  const row = await prisma.employee.findFirst({ where: { teamId, name } });
   return row ? toEmployee(row) : null;
 }
 

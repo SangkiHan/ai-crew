@@ -8,24 +8,26 @@ import {
 } from "../peer-messages/store.js";
 
 export function registerPeerMessageRoutes(app: FastifyInstance) {
-  app.post<{ Body: { fromName: string; toName: string; question: string } }>(
+  // 직원 이름은 팀 안에서만 유일하므로 teamId가 필수다 - 없으면 다른 팀의 동명이인과 구분되지 않는다.
+  app.post<{ Body: { teamId: string; fromName: string; toName: string; question: string } }>(
     "/api/peer-messages",
     async (req, reply) => {
-      const { fromName, toName, question } = req.body;
-      if (!fromName || !toName || !question) {
-        return reply.code(400).send({ error: "fromName, toName, question are required" });
+      const { teamId, fromName, toName, question } = req.body;
+      if (!teamId || !fromName || !toName || !question) {
+        return reply.code(400).send({ error: "teamId, fromName, toName, question are required" });
       }
-      return createPeerMessage({ fromName, toName, question });
+      return createPeerMessage({ teamId, fromName, toName, question });
     }
   );
 
   // toName 생략하면 fromName 기준으로 자기가 물어본 것들을 조회 (답 왔는지 확인용)
-  app.get<{ Querystring: { toName?: string; fromName?: string; status?: string } }>(
+  app.get<{ Querystring: { teamId?: string; toName?: string; fromName?: string; status?: string } }>(
     "/api/peer-messages",
     async (req, reply) => {
-      const { toName, fromName, status } = req.query;
-      if (toName) return listPeerMessagesFor(toName, status);
-      if (fromName) return listPeerMessagesFrom(fromName);
+      const { teamId, toName, fromName, status } = req.query;
+      if (!teamId) return reply.code(400).send({ error: "teamId query param is required" });
+      if (toName) return listPeerMessagesFor(teamId, toName, status);
+      if (fromName) return listPeerMessagesFrom(teamId, fromName);
       return reply.code(400).send({ error: "toName or fromName query param is required" });
     }
   );

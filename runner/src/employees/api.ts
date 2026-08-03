@@ -15,8 +15,11 @@ export async function fetchTeams(): Promise<Team[]> {
   return res.json();
 }
 
-export async function fetchPendingPeerMessages(toName: string): Promise<PeerMessage[]> {
-  const res = await fetch(`${AI_CREW_SERVER_URL}/api/peer-messages?toName=${encodeURIComponent(toName)}&status=open`);
+// 직원 이름은 팀 안에서만 유일하므로 팀과 함께 조회한다 - 그렇지 않으면 다른 팀 동명이인에게 온
+// 질문이 이 직원의 프롬프트에 섞여 들어온다.
+export async function fetchPendingPeerMessages(teamId: string, toName: string): Promise<PeerMessage[]> {
+  const qs = new URLSearchParams({ teamId, toName, status: "open" });
+  const res = await fetch(`${AI_CREW_SERVER_URL}/api/peer-messages?${qs}`);
   if (!res.ok) throw new Error(`failed to fetch peer messages: ${res.status}`);
   return res.json();
 }

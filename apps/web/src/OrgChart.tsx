@@ -166,9 +166,11 @@ export function OrgChart() {
     // ask_employee로 서로 상담 중인 직원 쌍을 잇는 선 - 다른 팀 클러스터에 속해 멀리 떨어져
     // 있어도 react-flow는 노드 id만 맞으면 알아서 그려주므로 별도 좌표 계산이 필요 없다.
     for (const key of consultingPairCounts.keys()) {
-      const [nameA, nameB] = key.split("|");
-      const employeeA = employees.find((e) => e.name === nameA);
-      const employeeB = employees.find((e) => e.name === nameB);
+      // 키는 "팀id|이름A|이름B" - 이름은 팀 안에서만 유일해서 팀까지 맞춰야 올바른 노드를 잇는다.
+      const [pairTeamId, nameA, nameB] = key.split("|");
+      const inTeam = (name: string) => employees.find((e) => e.teamId === pairTeamId && e.name === name);
+      const employeeA = inTeam(nameA);
+      const employeeB = inTeam(nameB);
       if (!employeeA || !employeeB) continue;
       edges.push({
         id: `consult-${key}`,

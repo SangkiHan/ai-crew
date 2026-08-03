@@ -197,7 +197,9 @@ export function DetailPanel() {
   const tickets = employee
     ? isQa
       ? Object.values(allTickets).filter((t) => t.teamId === employee.teamId)
-      : Object.values(allTickets).filter((t) => t.role === roleKey)
+      : // role(직원 이름)은 팀 안에서만 유일하므로 팀까지 맞춰야 다른 팀 동명이인의 티켓이
+        // 섞여 들어오지 않는다.
+        Object.values(allTickets).filter((t) => t.teamId === employee.teamId && t.role === roleKey)
     : [];
   const sortedTickets = [...tickets].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const activeTickets = sortedTickets.filter((t) => !isHistoryTicket(t));

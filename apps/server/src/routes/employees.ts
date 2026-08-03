@@ -55,7 +55,10 @@ export function registerEmployeeRoutes(app: FastifyInstance) {
         requireApproval: requireApproval ?? DEFAULT_REQUIRE_APPROVAL,
       });
     } catch (err) {
-      return reply.code(409).send({ error: `이름이 이미 존재합니다: ${name}` });
+      // 이름은 팀 안에서만 유일하다 - 다른 팀에 같은 이름이 있는 건 정상이므로 메시지에 명시한다.
+      return reply
+        .code(409)
+        .send({ error: `이 팀에 이미 "${name}" 직원이 있습니다 (다른 팀에는 같은 이름을 쓸 수 있습니다)` });
     }
   });
 
@@ -67,7 +70,14 @@ export function registerEmployeeRoutes(app: FastifyInstance) {
       if (req.body.driver && !VALID_DRIVERS.includes(req.body.driver)) {
         return reply.code(400).send({ error: `driver must be one of ${VALID_DRIVERS.join(", ")}` });
       }
-      return updateEmployee(req.params.id, req.body);
+      try {
+        return await updateEmployee(req.params.id, req.body);
+      } catch (err) {
+        // 이름 변경이 같은 팀의 기존 직원과 부딪히는 경우 (생성 경로와 같은 제약).
+        return reply
+          .code(409)
+          .send({ error: `이 팀에 이미 "${req.body.name}" 직원이 있습니다 (다른 팀에는 같은 이름을 쓸 수 있습니다)` });
+      }
     }
   );
 
