@@ -4,6 +4,7 @@ import {
   createTicket,
   getTicket,
   listTickets,
+  projectKey,
   saveTicketMemory,
   transitionTicket,
 } from "../tickets/store.js";
@@ -17,20 +18,14 @@ import {
 } from "../ws/runner.js";
 import { broadcastToUi } from "../ws/ui.js";
 
-// 경로 구분자가 "/"든 "\"든(서버는 리눅스 컨테이너 안이라 윈도우 경로의 "\"를 node:path가
-// 못 알아본다) 마지막 세그먼트만 뽑아낸다 - 등록된 프로젝트 절대경로와 이름만으로 비교할 때 쓴다.
-function lastPathSegment(p: string): string {
-  const parts = p.split(/[\\/]/).filter(Boolean);
-  return parts[parts.length - 1] ?? p;
-}
-
 // 팀장이 "프로젝트 관리"에 등록된 절대경로 대신 이름만(또는 다른 표기로) 넘겨도, 등록된 목록
 // 중 이름이 일치하는 게 있으면 그 절대경로로 강제 치환한다 - 팀장(LLM)이 매번 정확한 절대경로를
-// 쓸 거라고 프롬프트로만 기대하지 않고, 서버에서 결정적으로 보정한다.
+// 쓸 거라고 프롬프트로만 기대하지 않고, 서버에서 결정적으로 보정한다. 비교 규칙(projectKey)은
+// 같은 폴더를 쓰는 티켓끼리의 동시 실행을 막는 쪽과 공유한다 - 두 곳이 어긋나면 안 된다.
 function resolveRegisteredProject(project: string, registeredProjects: string[]): string {
   if (registeredProjects.includes(project)) return project;
-  const requestedName = lastPathSegment(project).toLowerCase();
-  const match = registeredProjects.find((p) => lastPathSegment(p).toLowerCase() === requestedName);
+  const requestedKey = projectKey(project);
+  const match = registeredProjects.find((p) => projectKey(p) === requestedKey);
   return match ?? project;
 }
 
