@@ -87,6 +87,16 @@ export async function reviseTicket(id: string, teamId: string, message: string) 
   return api(`/api/tickets/${id}/revise`, { method: "POST", body: JSON.stringify({ message }) });
 }
 
+// 팀장이 직원 보고를 확인해 사용량 제한으로 판단한 경우에만 자동 재실행을 예약한다.
+export async function scheduleTicketRetry(id: string, teamId: string, delayMinutes: number, reason: string) {
+  const ticket = await api<{ teamId: string }>(`/api/tickets/${id}`);
+  if (ticket.teamId !== teamId) throw new Error(`티켓 ${id}는 다른 팀 소속이라 재실행 예약할 수 없습니다`);
+  return api(`/api/tickets/${id}/schedule-retry`, {
+    method: "POST",
+    body: JSON.stringify({ delayMinutes, reason }),
+  });
+}
+
 // 직원(employee) 전용 - report_blocked MCP 툴이 사용. 진행 중인 티켓 하나에 고정되어 있으므로
 // ticketId는 파라미터로 안 받고 MCP 서버가 자기 프로세스의 env(TICKET_ID)에서 읽어 넘긴다.
 export function reportBlocked(ticketId: string, reason: string) {

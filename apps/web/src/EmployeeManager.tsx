@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { DriverStatus, Employee } from "@ai-crew/shared";
+import { DRIVER_MODEL_OPTIONS, type Driver, type DriverStatus, type Employee } from "@ai-crew/shared";
 import { useStore } from "./store.js";
 import {
   createEmployee,
@@ -99,7 +99,13 @@ export function EmployeeManager({ teamId, onClose }: { teamId: string; onClose: 
   const [error, setError] = useState<string | null>(null);
 
   // 담당 프로젝트를 편집 중인 직원 (한 번에 한 명만) - id와 편집 중인 선택 상태를 함께 들고 있다.
-  const [editing, setEditing] = useState<{ id: string; projects: string[] } | null>(null);
+  const [editing, setEditing] = useState<{
+    id: string;
+    driver: Driver;
+    model: string;
+    taskDescription: string;
+    projects: string[];
+  } | null>(null);
 
   useEffect(() => {
     fetchDriverStatus().then(setDriverStatus).catch(() => setDriverStatus({}));
@@ -134,12 +140,17 @@ export function EmployeeManager({ teamId, onClose }: { teamId: string; onClose: 
     }
   }
 
-  async function handleSaveProjects() {
+  async function handleSaveEmployee() {
     if (!editing) return;
     setSubmitting(true);
     setError(null);
     try {
-      await updateEmployee(editing.id, { projects: editing.projects });
+      await updateEmployee(editing.id, {
+        driver: editing.driver,
+        model: editing.model || null,
+        taskDescription: editing.taskDescription.trim(),
+        projects: editing.projects,
+      });
       setEditing(null);
       await refresh();
     } catch (err) {
@@ -147,6 +158,14 @@ export function EmployeeManager({ teamId, onClose }: { teamId: string; onClose: 
     } finally {
       setSubmitting(false);
     }
+  }
+
+  function modelOptions(driver: Driver, currentModel = "") {
+    const options = driver === "mock" ? [] : DRIVER_MODEL_OPTIONS[driver];
+    if (currentModel && !options.some((option) => option.value === currentModel)) {
+      return [{ value: currentModel, label: `현재 설정: ${currentModel}` }, ...options];
+    }
+    return options;
   }
 
   async function handleDelete(id: string) {
@@ -213,7 +232,15 @@ export function EmployeeManager({ teamId, onClose }: { teamId: string; onClose: 
                       <button
                         onClick={() =>
                           setEditing(
-                            editing?.id === e.id ? null : { id: e.id, projects: e.projects }
+                            editing?.id === e.id
+                              ? null
+                              : {
+                                  id: e.id,
+                                  driver: e.driver,
+                                  model: e.model ?? "",
+                                  taskDescription: e.taskDescription,
+                                  projects: e.projects,
+                                }
                           )
                         }
                         className="rounded-md bg-slate-700 px-2 py-1 text-xs text-slate-200 hover:bg-slate-600"
@@ -231,18 +258,56 @@ export function EmployeeManager({ teamId, onClose }: { teamId: string; onClose: 
 
                   {editing?.id === e.id && (
                     <div className="mt-3 border-t border-slate-700 pt-3">
+                      <label className="mb-2 block text-xs text-slate-400">사용 AI</label>
+                      <select
+                        value={editing.driver}
+                        onChange={(event) =>
+                          setEditing({ ...editing, driver: event.target.value as Driver, model: "" })
+                        }
+                        disabled={submitting}
+                        className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500 disabled:opacity-50"
+                      >
+                        {DRIVER_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
                       <p className="mb-2 text-xs text-slate-400">
                         담당 프로젝트 (아무것도 선택하지 않으면 팀의 모든 프로젝트를 담당합니다)
                       </p>
+                      <label className="mb-2 block text-xs text-slate-400">모델</label>
+                      <select
+                        value={editing.model}
+                        onChange={(event) => setEditing({ ...editing, model: event.target.value })}
+                        disabled={submitting}
+                        className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500 disabled:opacity-50"
+                      >
+                        <option value="">CLI 기본 모델 사용</option>
+                        {modelOptions(editing.driver, editing.model).map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      <label className="mb-2 mt-3 block text-xs text-slate-400">담당 업무</label>
+                      <textarea
+                        value={editing.taskDescription}
+                        onChange={(event) => setEditing({ ...editing, taskDescription: event.target.value })}
+                        disabled={submitting}
+                        rows={3}
+                        className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500 disabled:opacity-50"
+                      />
+                      <p className="mb-2 mt-3 text-xs text-slate-400">담당 프로젝트</p>
                       <ProjectPicker
                         teamProjects={teamProjects}
                         selected={editing.projects}
-                        onChange={(next) => setEditing({ id: e.id, projects: next })}
+                        onChange={(next) => setEditing({ ...editing, projects: next })}
                         disabled={submitting}
                       />
                       <button
-                        onClick={handleSaveProjects}
-                        disabled={submitting}
+                        onClick={handleSaveEmployee}
+                        disabled={submitting || !editing.taskDescription.trim()}
                         className="mt-3 rounded-md bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500 disabled:opacity-50"
                       >
                         저장
@@ -293,12 +358,18 @@ export function EmployeeManager({ teamId, onClose }: { teamId: string; onClose: 
                 </div>
               )}
 
-              <input
+              <select
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
-                placeholder="모델 (선택, 예: sonnet) - 비워두면 그 CLI의 기본 모델을 씁니다"
                 className="rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500"
-              />
+              >
+                <option value="">모델 선택 안 함 (CLI 기본값)</option>
+                {modelOptions(driver as Driver).map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
 
               <textarea
                 value={taskDescription}

@@ -13,6 +13,7 @@ import { registerPlanningDocRoutes } from "./routes/planning-docs.js";
 import { registerMemoryRoutes } from "./routes/memory.js";
 import { registerProjectRoutes } from "./routes/projects.js";
 import { registerConsultRoutes } from "./routes/consult.js";
+import { releaseDueTicketRetries } from "./tickets/store.js";
 import { ensureDefaultTeamAssigned } from "./teams/store.js";
 import { registerUiWs } from "./ws/ui.js";
 import { registerRunnerWs } from "./ws/runner.js";
@@ -62,6 +63,12 @@ async function main() {
   registerRunnerWs(app);
 
   await app.listen({ port: PORT, host: "0.0.0.0" });
+
+  const retryTimer = setInterval(() => {
+    releaseDueTicketRetries().catch((err) => app.log.error(err, "scheduled ticket retry failed"));
+  }, 15_000);
+  retryTimer.unref();
+  releaseDueTicketRetries().catch((err) => app.log.error(err, "initial scheduled ticket retry failed"));
 
   // 팀 기능 추가 전부터 있던 직원/티켓(teamId가 비어있음)을 "기본 팀"으로 채워 넣는다.
   // 매번 불러도 안전하다 (이미 teamId가 있으면 대상이 없어 아무 일도 안 함).

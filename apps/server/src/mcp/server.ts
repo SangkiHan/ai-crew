@@ -12,6 +12,7 @@ import {
   listProjects,
   listTickets,
   reviseTicket,
+  scheduleTicketRetry,
   searchHistory,
 } from "./tools.js";
 
@@ -126,6 +127,22 @@ server.tool(
   },
   async ({ ticketId, message }) => {
     const ticket = await reviseTicket(ticketId, TEAM_ID!, message);
+    return { content: [{ type: "text" as const, text: JSON.stringify(ticket, null, 2) }] };
+  }
+);
+
+server.tool(
+  "schedule_ticket_retry",
+  "직원 실패 보고를 확인해 사용량/session 제한으로 판단될 때만 사용합니다. " +
+    "지정한 시간이 지나면 같은 티켓을 자동으로 다시 실행합니다. 코드 오류, 권한 오류, " +
+    "컨텍스트 초과는 예약하지 마세요.",
+  {
+    ticketId: z.string().describe("재실행할 failed 티켓 id"),
+    delayMinutes: z.number().int().min(1).max(10080).describe("몇 분 후 재실행할지"),
+    reason: z.string().describe("사용량/session 제한이라고 판단한 근거와 원문 오류"),
+  },
+  async ({ ticketId, delayMinutes, reason }) => {
+    const ticket = await scheduleTicketRetry(ticketId, TEAM_ID!, delayMinutes, reason);
     return { content: [{ type: "text" as const, text: JSON.stringify(ticket, null, 2) }] };
   }
 );

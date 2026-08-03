@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { isQaEmployee, type PlanningDocStatus, type Ticket, type TicketStatus } from "@ai-crew/shared";
 import { useStore } from "./store.js";
-import { approveTicket, rejectTicket, reviseTicket } from "./lib/api.js";
+import { approveTicket, rejectTicket, retryTicket, reviseTicket } from "./lib/api.js";
 
 const PLANNING_STATUS_LABEL: Record<PlanningDocStatus, string> = {
   drafting: "작성 중",
@@ -173,6 +173,36 @@ function ApprovalActions({ ticket }: { ticket: Ticket }) {
           {isBlocked ? "삭제 (막힘 종료)" : "거부"}
         </button>
       </div>
+    </div>
+  );
+}
+
+function RetryAction({ ticket }: { ticket: Ticket }) {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleRetry() {
+    setPending(true);
+    setError(null);
+    try {
+      await retryTicket(ticket.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="mt-2">
+      <button
+        disabled={pending}
+        onClick={handleRetry}
+        className="rounded-md bg-amber-600 px-3 py-1 text-xs font-medium text-white hover:bg-amber-500 disabled:opacity-50"
+      >
+        {pending ? "다시 실행 중..." : "다시 실행"}
+      </button>
+      {error && <p className="mt-1 text-xs text-rose-400">{error}</p>}
     </div>
   );
 }
@@ -358,6 +388,8 @@ export function DetailPanel() {
         (selectedTicket.status === "review" ||
           selectedTicket.status === "needs_approval" ||
           selectedTicket.status === "blocked") && <ApprovalActions ticket={selectedTicket} />}
+
+      {selectedTicket?.status === "failed" && <RetryAction ticket={selectedTicket} />}
 
       {selectedTicket && (
         <div
