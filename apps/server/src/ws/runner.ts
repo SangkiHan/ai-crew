@@ -16,7 +16,7 @@ import {
   updateMeta,
 } from "../tickets/store.js";
 import { findQaEmployee } from "../employees/store.js";
-import { updatePlanningDocResult } from "../planning/store.js";
+import { planningDocEvents, updatePlanningDocResult } from "../planning/store.js";
 import { saveChatMessage } from "../chat/store.js";
 import { broadcastToUi } from "./ui.js";
 
@@ -92,6 +92,14 @@ export function registerRunnerWs(app: FastifyInstance) {
         );
       }
     });
+
+    // 기획서도 티켓과 같은 방식으로 상태가 바뀔 때마다 UI에 알린다. 이 구독이 없어서 지금까지
+    // planningDocEvents는 emit만 되고 아무도 듣지 않았고(죽은 이벤트), 러너가 작성을 끝냈을 때만
+    // 따로 broadcast가 있었다 - 그래서 "기획자에게 위임됨(drafting)"이 UI에 전혀 안 보이고
+    // 조직도의 기획자 노드도 계속 대기 상태로 남았다.
+    planningDocEvents.on("changed", (doc: PlanningDoc) => {
+      broadcastToUi({ type: "planning_doc_updated", doc });
+    });
   }
 }
 
@@ -128,8 +136,9 @@ async function handleRunnerEvent(event: RunnerToServerEvent, app: FastifyInstanc
   } else if (event.type === "planning_doc_log") {
     app.log.info({ planningDocId: event.planningDocId }, event.line);
   } else if (event.type === "planning_doc_result") {
-    const doc = await updatePlanningDocResult(event.planningDocId, event.success, event.content, event.sessionId);
-    if (doc) broadcastToUi({ type: "planning_doc_updated", doc });
+    // UI 알림은 planningDocEvents 구독자 한 곳에서만 처리한다 (티켓과 같은 패턴) - 여기서
+    // 또 broadcast하면 같은 갱신이 두 번 나간다.
+    await updatePlanningDocResult(event.planningDocId, event.success, event.content, event.sessionId);
   } else if (event.type === "job_log") {
     broadcastToUi({ type: "log_line", ticketId: event.ticketId, line: event.line, ts: event.ts });
   } else if (event.type === "job_heartbeat") {

@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { isQaEmployee, type Ticket, type TicketStatus } from "@ai-crew/shared";
+import { isQaEmployee, type PlanningDocStatus, type Ticket, type TicketStatus } from "@ai-crew/shared";
 import { useStore } from "./store.js";
 import { approveTicket, rejectTicket, reviseTicket } from "./lib/api.js";
+
+const PLANNING_STATUS_LABEL: Record<PlanningDocStatus, string> = {
+  drafting: "작성 중",
+  review: "검토 대기",
+  approved: "승인됨",
+  rejected: "거부됨",
+};
 
 const STATUS_LABEL: Record<TicketStatus, string> = {
   queued: "대기",
@@ -177,6 +184,7 @@ export function DetailPanel() {
   // ticketsForRole은 store 안에서 안정적인 함수 참조라 이걸 구독하면 tickets가 바뀌어도
   // 리렌더링되지 않는다. tickets 객체를 직접 구독해 리렌더링을 트리거한다.
   const allTickets = useStore((s) => s.tickets);
+  const planningDocsByTeam = useStore((s) => s.planningDocsByTeam);
   const logsByTicket = useStore((s) => s.logsByTicket);
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
@@ -194,6 +202,15 @@ export function DetailPanel() {
   // 티켓 전체를 보여준다.
   const roleKey = employee?.name;
   const isQa = employee ? isQaEmployee(employee.taskDescription) : false;
+  // 기획서는 티켓과 별개 모델이라 위 티켓 목록에는 절대 잡히지 않는다 - 기획을 맡은 직원은
+  // 여기서 따로 꺼내와야 패널이 비어 보이지 않는다. 이력(approved/rejected)은 감춘다.
+  const myPlanningDocs = employee
+    ? (planningDocsByTeam[employee.teamId] ?? []).filter(
+        (d) =>
+          d.employeeName === employee.name &&
+          (showHistory || d.status === "drafting" || d.status === "review")
+      )
+    : [];
   const tickets = employee
     ? isQa
       ? Object.values(allTickets).filter((t) => t.teamId === employee.teamId)
@@ -292,6 +309,30 @@ export function DetailPanel() {
       </div>
 
       <div className="flex flex-col gap-1.5 overflow-y-auto">
+        {/* 기획서는 티켓이 아니라 별도 모델이라 티켓 목록에 안 잡힌다 - 기획을 맡은 직원의
+            패널이 "배정된 티켓 없음"만 띄우는 걸 막기 위해 위에 따로 보여준다. */}
+        {myPlanningDocs.map((d) => (
+          <div
+            key={d.id}
+            className="rounded-lg border border-violet-800/60 bg-violet-950/20 px-3 py-2"
+            title={d.request}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="truncate text-sm text-slate-200">기획서: {d.request}</span>
+              <span className="shrink-0 rounded bg-violet-900/60 px-1.5 py-0.5 text-[11px] text-violet-200">
+                {PLANNING_STATUS_LABEL[d.status]}
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-slate-500">
+              {d.status === "drafting"
+                ? "기획자가 작성 중입니다."
+                : d.status === "review"
+                  ? '상단 "기획서" 버튼에서 검토하고 승인/거부할 수 있습니다.'
+                  : "완료된 기획서입니다."}
+            </p>
+          </div>
+        ))}
+
         {visibleTickets.length === 0 ? (
           <p className="text-sm text-slate-500">
             {showHistory

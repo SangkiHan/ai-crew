@@ -9,7 +9,7 @@ import { TeamProjectsManager } from "./TeamProjectsManager.js";
 import { TeamSwitcher } from "./TeamSwitcher.js";
 import { useStore } from "./store.js";
 import { useUiSocket } from "./lib/ws.js";
-import { fetchAgents, fetchEmployees, fetchTeams, fetchTickets } from "./lib/api.js";
+import { fetchAgents, fetchEmployees, fetchPlanningDocs, fetchTeams, fetchTickets } from "./lib/api.js";
 
 export function App() {
   const setAgents = useStore((s) => s.setAgents);
@@ -18,6 +18,7 @@ export function App() {
   const setSelectedTeamId = useStore((s) => s.setSelectedTeamId);
   const setEmployees = useStore((s) => s.setEmployees);
   const setTickets = useStore((s) => s.setTickets);
+  const setPlanningDocs = useStore((s) => s.setPlanningDocs);
   const [managingEmployees, setManagingEmployees] = useState(false);
   const [managingProjects, setManagingProjects] = useState(false);
   const [showPlanningDocs, setShowPlanningDocs] = useState(false);
@@ -38,6 +39,15 @@ export function App() {
       }
     }).catch(console.error);
   }, [setAgents, setEmployees, setTickets, setTeams, setSelectedTeamId]);
+
+  // 기획서는 지금까지 "기획서" 패널을 열 때만 불러왔다 - 그래서 패널을 한 번도 안 열면 조직도가
+  // 기획 중인 직원을 알 방법이 없어서 계속 대기 상태로 보였다. 팀이 정해지면 미리 받아둔다.
+  useEffect(() => {
+    if (!selectedTeamId) return;
+    fetchPlanningDocs(selectedTeamId)
+      .then((docs) => setPlanningDocs(selectedTeamId, docs))
+      .catch(console.error);
+  }, [selectedTeamId, setPlanningDocs]);
 
   return (
     <div className="flex h-screen w-screen flex-col bg-slate-950">

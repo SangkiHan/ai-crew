@@ -47,6 +47,7 @@ interface StoreState {
   setEmployees: (employees: Employee[]) => void;
   setTickets: (tickets: Ticket[]) => void;
   setPlanningDocs: (teamId: string, docs: PlanningDoc[]) => void;
+  upsertPlanningDoc: (doc: PlanningDoc) => void;
   setSelectedNode: (id: string | null) => void;
   sendUserMessage: (teamId: string, text: string, mode?: "chat" | "planning") => Promise<void>;
   handleServerEvent: (event: ServerToUiEvent) => void;
@@ -206,14 +207,19 @@ export const useStore = create<StoreState>((set, get) => ({
         return { consultingEmployeeCounts: nextCounts, consultingPairCounts: nextPairs };
       });
     } else if (event.type === "planning_doc_updated") {
-      set((s) => {
-        const list = s.planningDocsByTeam[event.doc.teamId] ?? [];
-        const idx = list.findIndex((d) => d.id === event.doc.id);
-        const next = idx >= 0 ? list.map((d) => (d.id === event.doc.id ? event.doc : d)) : [...list, event.doc];
-        return { planningDocsByTeam: { ...s.planningDocsByTeam, [event.doc.teamId]: next } };
-      });
+      get().upsertPlanningDoc(event.doc);
     }
   },
+
+  // WS 이벤트와, 승인/거부/수정요청 응답이 공유한다 - 응답으로 이미 최신 문서를 받았으면 WS가
+  // 도착하기를 기다리지 않고 바로 반영해야 화면이 즉시 바뀐다.
+  upsertPlanningDoc: (doc) =>
+    set((s) => {
+      const list = s.planningDocsByTeam[doc.teamId] ?? [];
+      const exists = list.some((d) => d.id === doc.id);
+      const next = exists ? list.map((d) => (d.id === doc.id ? doc : d)) : [...list, doc];
+      return { planningDocsByTeam: { ...s.planningDocsByTeam, [doc.teamId]: next } };
+    }),
 
   loadChatHistory: async (teamId) => {
     if (get().chatHistoryLoadedTeamIds.has(teamId)) return; // 이미 불러온 팀 - 다시 안 불러온다
@@ -253,12 +259,21 @@ export const useStore = create<StoreState>((set, get) => ({
     if ((get().consultingEmployeeCounts.get(employeeKey(employee.teamId, employee.name)) ?? 0) > 0) {
       return "consulting";
     }
+    // 기획서 작성은 티켓이 아니라 PlanningDoc으로 진행된다 - 티켓만 보면 기획자에게 위임이
+    // 끝난 뒤에도 계속 "대기"로 보인다(실제로 그렇게 보여서 나온 사용자 지적). drafting은 지금
+    // 쓰고 있는 중이고, review는 사람이 읽고 승인/거부해야 넘어가므로 "확인 필요"로 띄운다.
+    const myDocs = (get().planningDocsByTeam[employee.teamId] ?? []).filter(
+      (d) => d.employeeName === employee.name
+    );
+    if (myDocs.some((d) => d.status === "drafting")) return "busy";
+
     const tickets = get().ticketsForRole(employee.teamId, employee.name);
     if (isQaEmployee(employee.taskDescription)) {
       const teamTickets = Object.values(get().tickets).filter((t) => t.teamId === employee.teamId);
       if (teamTickets.some((t) => t.status === "qa_review")) return "busy";
     }
     if (tickets.some((t) => t.status === "running")) return "busy";
+    if (myDocs.some((d) => d.status === "review")) return "attention";
     if (tickets.some((t) => t.status === "blocked" || t.status === "needs_approval")) return "attention";
     if (tickets.some((t) => t.status === "queued" || t.status === "assigned")) {
       return "waiting";
