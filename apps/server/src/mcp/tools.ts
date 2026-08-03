@@ -104,12 +104,17 @@ export function listEmployees(teamId: string) {
 }
 
 // 직원 간 비동기 소통 - 팀장을 거치지 않는다. 보내는 쪽(fromName)은 답을 기다리지 않고 계속 작업한다.
-export function askPeer(fromName: string, toName: string, question: string) {
-  return api("/api/peer-messages", { method: "POST", body: JSON.stringify({ fromName, toName, question }) });
+// 이름은 팀 안에서만 유일하므로 teamId를 함께 넘긴다 - 다른 팀 동명이인에게 새면 안 된다.
+export function askPeer(teamId: string, fromName: string, toName: string, question: string) {
+  return api("/api/peer-messages", {
+    method: "POST",
+    body: JSON.stringify({ teamId, fromName, toName, question }),
+  });
 }
 
-export function listPeerMessagesFor(toName: string, status = "open") {
-  return api(`/api/peer-messages?toName=${encodeURIComponent(toName)}&status=${status}`);
+export function listPeerMessagesFor(teamId: string, toName: string, status = "open") {
+  const qs = new URLSearchParams({ teamId, toName, status });
+  return api(`/api/peer-messages?${qs}`);
 }
 
 export function answerPeerMessage(id: string, answer: string) {

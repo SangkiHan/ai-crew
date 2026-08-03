@@ -3,7 +3,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import spawn from "cross-spawn";
 import WebSocket from "ws";
-import { isQaEmployee, type DriverStatus, type RunnerToServerEvent, type ServerToRunnerEvent, type Ticket } from "@ai-crew/shared";
+import {
+  isQaEmployee,
+  type DriverStatus,
+  type Employee,
+  type RunnerToServerEvent,
+  type ServerToRunnerEvent,
+  type Ticket,
+} from "@ai-crew/shared";
 import { fetchEmployees } from "./employees/api.js";
 import { runClaudeDriver, runClaudeQaReview, runClaudeReviseDriver } from "./drivers/claude.js";
 import { runGeminiDriver } from "./drivers/gemini.js";
@@ -35,6 +42,12 @@ function send(event: RunnerToServerEvent) {
   }
 }
 
+// 직원 이름은 팀 안에서만 유일하다 - 다른 팀에 같은 이름("백엔드" 등)이 있을 수 있으므로 이름만으로
+// 찾으면 엉뚱한 팀의 동명이인에게 일이 간다. 항상 팀과 함께 찾는다.
+function findInTeam(employees: Employee[], teamId: string, name: string): Employee | undefined {
+  return employees.find((e) => e.teamId === teamId && e.name === name);
+}
+
 // 직원 명단은 파일이 아니라 서버(DB)에서 매번 새로 가져온다 - 웹에서 직원을 추가/삭제해도
 // 러너 재시작이 필요 없다. ticket.role은 직원의 name과 같다.
 async function runJob(ticket: Ticket): Promise<void> {
@@ -56,7 +69,7 @@ async function runJob(ticket: Ticket): Promise<void> {
     return runClaudeQaReview(ticket, qaEmployee, send);
   }
 
-  const employee = employees.find((e) => e.name === ticket.role);
+  const employee = findInTeam(employees, ticket.teamId, ticket.role);
 
   if (!employee) {
     console.log(`[runner] role "${ticket.role}"에 맞는 직원이 없어 mock으로 대체합니다`);
@@ -81,7 +94,7 @@ async function runJob(ticket: Ticket): Promise<void> {
 // 검증하지 않았다.
 async function runReviseJob(ticket: Ticket, message: string): Promise<void> {
   const employees = await fetchEmployees();
-  const employee = employees.find((e) => e.name === ticket.role);
+  const employee = findInTeam(employees, ticket.teamId, ticket.role);
   if (!employee) {
     console.log(`[runner] role "${ticket.role}"에 맞는 직원이 없어 수정 요청을 처리할 수 없습니다`);
     send({ type: "job_status", ticketId: ticket.id, status: "failed" });
@@ -109,7 +122,7 @@ async function handlePlanningDocAssign(event: {
   resumeSessionId?: string;
 }) {
   const employees = await fetchEmployees();
-  const employee = employees.find((e) => e.name === event.employeeName);
+  const employee = findInTeam(employees, event.teamId, event.employeeName);
   if (!employee) {
     send({
       type: "planning_doc_result",
@@ -170,13 +183,14 @@ async function handleCreateProjectRequest(event: {
 // 가능하다 (그 프로젝트의 실제 코드를 읽어야 하므로).
 async function handleConsultEmployeeRequest(event: {
   requestId: string;
+  teamId: string;
   employeeName: string;
   project: string;
   question: string;
   fromEmployeeName?: string;
 }) {
   const employees = await fetchEmployees();
-  const employee = employees.find((e) => e.name === event.employeeName);
+  const employee = findInTeam(employees, event.teamId, event.employeeName);
   if (!employee) {
     send({
       type: "consult_employee_result",

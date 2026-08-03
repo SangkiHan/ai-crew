@@ -11,7 +11,9 @@ export type ServerToUiEvent =
   | { type: "planning_doc_updated"; doc: PlanningDoc }
   // ask_employee(consult)로 직원 간 실시간 소통이 시작/종료될 때 - 두 직원(질문자/답변자)
   // 이름을 같이 보내 org chart에서 둘 다 "상담 중"으로 표시할 수 있게 한다.
-  | { type: "employee_consult_status"; employeeNames: string[]; status: "consulting" | "idle" };
+  // 직원 이름은 팀 안에서만 유일하므로 어느 팀의 상담인지 함께 보낸다 - 없으면 다른 팀의
+  // 동명이인 노드까지 같이 "상담 중"으로 켜진다. 상담은 항상 같은 팀 안에서만 일어난다.
+  | { type: "employee_consult_status"; teamId: string; employeeNames: string[]; status: "consulting" | "idle" };
 
 export type UiToServerEvent =
   | { type: "chat_message"; text: string }
@@ -84,6 +86,8 @@ export type ServerToRunnerEvent =
   | {
       type: "consult_employee_request";
       requestId: string;
+      // 직원 이름은 팀 안에서만 유일하므로 어느 팀의 직원인지 함께 보낸다.
+      teamId: string;
       employeeName: string;
       project: string;
       question: string;

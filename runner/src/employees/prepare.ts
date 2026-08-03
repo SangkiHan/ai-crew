@@ -92,7 +92,7 @@ export async function prepareEmployeeJob(
     ts: now(),
   });
 
-  const pendingPeerMessages = await fetchPendingPeerMessages(employee.name).catch(() => []);
+  const pendingPeerMessages = await fetchPendingPeerMessages(employee.teamId, employee.name).catch(() => []);
   // QA가 반려해서 재작업하는 경우, QA가 남긴 사유를 티켓 본문보다 먼저 보여준다.
   const qaContext = ticket.qaNote
     ? `## QA 반려 사유 (${ticket.qaCycles}회차)\n\n${ticket.qaNote}\n\n위 내용을 확인하고 수정해주세요.\n\n---\n\n`

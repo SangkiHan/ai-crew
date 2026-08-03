@@ -50,7 +50,7 @@ server.tool(
     question: z.string().describe("구체적인 질문"),
   },
   async ({ toName, question }) => {
-    const message = await askPeer(EMPLOYEE_NAME!, toName, question);
+    const message = await askPeer(TEAM_ID!, EMPLOYEE_NAME!, toName, question);
     return { content: [{ type: "text" as const, text: JSON.stringify(message, null, 2) }] };
   }
 );

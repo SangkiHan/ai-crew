@@ -30,8 +30,9 @@ function resolveRegisteredProject(project: string, registeredProjects: string[])
 }
 
 interface CreateTicketBody {
-  // 팀장의 MCP 툴(create_ticket)이 자기 TEAM_ID를 실어 보낸다 - "다른 팀 직원에게 티켓을
-  // 만들 수 없다"를 서버에서 강제하기 위해서다. role로 찾은 직원의 실제 teamId를 최종값으로 쓴다.
+  // 팀장의 MCP 툴(create_ticket)이 자기 TEAM_ID를 실어 보낸다. 직원 이름(role)은 팀 안에서만
+  // 유일해서 팀을 모르면 누구인지 특정할 수 없으므로 필수다 - 이걸로 "다른 팀 직원에게 티켓을
+  // 만들 수 없다"도 함께 강제된다.
   teamId?: string;
   role: string;
   project: string;
@@ -43,15 +44,12 @@ interface CreateTicketBody {
 export function registerTicketRoutes(app: FastifyInstance) {
   app.post<{ Body: CreateTicketBody }>("/api/tickets", async (req, reply) => {
     const { teamId, role, project, title, spec, parentTicketId } = req.body;
-    if (!role || !project || !title || !spec) {
-      return reply.code(400).send({ error: "role, project, title, spec are required" });
+    if (!teamId || !role || !project || !title || !spec) {
+      return reply.code(400).send({ error: "teamId, role, project, title, spec are required" });
     }
-    const employee = await getEmployeeByName(role);
+    const employee = await getEmployeeByName(teamId, role);
     if (!employee) {
-      return reply.code(400).send({ error: `"${role}" 직원을 찾을 수 없습니다` });
-    }
-    if (teamId && employee.teamId !== teamId) {
-      return reply.code(403).send({ error: `"${role}"은(는) 이 팀 소속이 아닙니다` });
+      return reply.code(400).send({ error: `이 팀에 "${role}" 직원이 없습니다` });
     }
     const team = await getTeam(employee.teamId);
     const resolvedProject = team ? resolveRegisteredProject(project, team.projects) : project;

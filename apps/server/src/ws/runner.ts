@@ -347,6 +347,7 @@ export async function requestCreateProject(
 // "상담 중"으로 표시되도록 시작/종료 시점에 브로드캐스트한다 - 없으면(기획 세션이 물어본 경우)
 // 답변자만 표시한다.
 export async function requestConsultEmployee(
+  teamId: string,
   employeeName: string,
   project: string,
   question: string,
@@ -359,6 +360,7 @@ export async function requestConsultEmployee(
   const event: ServerToRunnerEvent = {
     type: "consult_employee_request",
     requestId,
+    teamId,
     employeeName,
     project,
     question,
@@ -366,11 +368,11 @@ export async function requestConsultEmployee(
   };
   const participants = fromEmployeeName ? [fromEmployeeName, employeeName] : [employeeName];
 
-  broadcastToUi({ type: "employee_consult_status", employeeNames: participants, status: "consulting" });
+  broadcastToUi({ type: "employee_consult_status", teamId, employeeNames: participants, status: "consulting" });
 
   return new Promise((resolve) => {
     const finish = (result: { success: boolean; answer?: string; error?: string }) => {
-      broadcastToUi({ type: "employee_consult_status", employeeNames: participants, status: "idle" });
+      broadcastToUi({ type: "employee_consult_status", teamId, employeeNames: participants, status: "idle" });
       resolve(result);
     };
     const timeout = setTimeout(() => {
