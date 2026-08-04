@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import {
   createEmployee,
   deleteEmployee,
+  EmployeeRenameBlockedError,
   getEmployee,
   listEmployees,
   updateEmployee,
@@ -73,7 +74,11 @@ export function registerEmployeeRoutes(app: FastifyInstance) {
       try {
         return await updateEmployee(req.params.id, req.body);
       } catch (err) {
-        // 이름 변경이 같은 팀의 기존 직원과 부딪히는 경우 (생성 경로와 같은 제약).
+        // 진행 중인 티켓이 있어 이름 변경이 막힌 경우 - 원인이 다르므로 메시지도 따로 준다.
+        if (err instanceof EmployeeRenameBlockedError) {
+          return reply.code(409).send({ error: err.message });
+        }
+        // 그 외(주로 이름 변경이 같은 팀의 기존 직원과 부딪히는 unique 제약 위반).
         return reply
           .code(409)
           .send({ error: `이 팀에 이미 "${req.body.name}" 직원이 있습니다 (다른 팀에는 같은 이름을 쓸 수 있습니다)` });
