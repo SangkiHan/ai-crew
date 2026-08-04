@@ -1,15 +1,19 @@
 import type { FastifyInstance } from "fastify";
-import { isKnownDriverModel } from "@ai-crew/shared";
+import { isKnownDriverModel, type Driver } from "@ai-crew/shared";
 import {
   countEmployeesInTeam,
   createTeam,
   deleteTeam,
   getTeam,
   listTeams,
-  updateTeamManagerModel,
+  updateTeamManagerConfig,
   updateTeamProjects,
 } from "../teams/store.js";
 import { pruneEmployeeProjects } from "../employees/store.js";
+
+// 팀장이 직접 코드를 고치지 않고(delegate-only) 세션이 끝나면 사라지므로 mock 드라이버를
+// 골라줄 이유가 없다 - 직원 드라이버 검증(routes/employees.ts VALID_DRIVERS)과 같은 값 집합.
+const VALID_MANAGER_DRIVERS: Driver[] = ["claude", "antigravity", "codex"];
 
 export function registerTeamRoutes(app: FastifyInstance) {
   app.get("/api/teams", async () => {
@@ -44,18 +48,25 @@ export function registerTeamRoutes(app: FastifyInstance) {
     }
   );
 
-  // 팀장 세션의 모델을 바꾼다. model이 null/생략이면 agents/manager.md 기본값으로 되돌아간다.
-  // 팀장은 항상 claude 드라이버라 직원의 DRIVER_MODEL_OPTIONS.claude와 같은 값 집합을 검증에 쓴다.
-  app.put<{ Params: { id: string }; Body: { model: string | null } }>(
-    "/api/teams/:id/manager-model",
+  // 팀장을 실행할 CLI와 모델을 함께 바꾼다. driver를 바꾸면서 model을 이전 드라이버 기준 값
+  // 그대로 두면 새 드라이버에서 무의미하거나 유효하지 않은 값이 될 수 있어 - 둘을 한 요청으로
+  // 묶어 항상 같이 갱신한다(웹 UI가 드라이버 버튼을 누르는 즉시 model:null로 함께 보낸다).
+  // model이 null/생략이면 agents/manager.md 기본값으로 되돌아간다. claude만 대화 이어가기를
+  // 지원한다 - 다른 드라이버로 바꾸면 팀장이 매번 새 세션으로 시작한다(에러는 아니고 UI에 안내).
+  app.put<{ Params: { id: string }; Body: { driver?: string; model: string | null } }>(
+    "/api/teams/:id/manager-config",
     async (req, reply) => {
       const existing = await getTeam(req.params.id);
       if (!existing) return reply.code(404).send({ error: "not found" });
-      const model = req.body.model?.trim() || null;
-      if (model && !isKnownDriverModel("claude", model)) {
-        return reply.code(400).send({ error: `알 수 없는 모델입니다: ${model}` });
+      const driver = (req.body.driver ?? existing.managerDriver) as Driver;
+      if (!VALID_MANAGER_DRIVERS.includes(driver)) {
+        return reply.code(400).send({ error: `driver must be one of ${VALID_MANAGER_DRIVERS.join(", ")}` });
       }
-      return updateTeamManagerModel(req.params.id, model);
+      const model = req.body.model?.trim() || null;
+      if (model && !isKnownDriverModel(driver, model)) {
+        return reply.code(400).send({ error: `"${driver}"에서 알 수 없는 모델입니다: ${model}` });
+      }
+      return updateTeamManagerConfig(req.params.id, driver, model);
     }
   );
 

@@ -1,4 +1,4 @@
-import type { AgentConfig, DriverStatus, Employee, PlanningDoc, Team, Ticket } from "@ai-crew/shared";
+import type { AgentConfig, Driver, DriverStatus, Employee, PlanningDoc, Team, Ticket } from "@ai-crew/shared";
 
 async function json<T>(res: Response): Promise<T> {
   const data = await res.json();
@@ -34,11 +34,12 @@ export function updateTeamProjects(id: string, projects: string[]): Promise<Team
   }).then((res) => json<Team>(res));
 }
 
-export function updateTeamManagerModel(id: string, model: string | null): Promise<Team> {
-  return fetch(`/api/teams/${id}/manager-model`, {
+// driver를 생략하면 서버가 지금 팀의 드라이버를 그대로 유지한다(모델만 바꿀 때).
+export function updateTeamManagerConfig(id: string, driver: Driver | undefined, model: string | null): Promise<Team> {
+  return fetch(`/api/teams/${id}/manager-config`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model }),
+    body: JSON.stringify({ driver, model }),
   }).then((res) => json<Team>(res));
 }
 
