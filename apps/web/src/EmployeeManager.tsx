@@ -11,7 +11,7 @@ import {
 
 const DRIVER_OPTIONS: { value: string; label: string }[] = [
   { value: "claude", label: "Claude Code" },
-  { value: "gemini", label: "Gemini CLI" },
+  { value: "antigravity", label: "Antigravity CLI" },
   { value: "codex", label: "Codex CLI" },
 ];
 
@@ -23,7 +23,8 @@ function DriverBadge({ status }: { status?: DriverStatus }) {
 
 function installHint(driver: string): string {
   if (driver === "claude") return "npm install -g @anthropic-ai/claude-code && claude";
-  if (driver === "gemini") return "npm install -g @google/gemini-cli && gemini";
+  // Antigravity CLI는 npm이 아니라 공식 설치 스크립트로 설치한다 (Windows PowerShell 기준).
+  if (driver === "antigravity") return "irm https://antigravity.google/cli/install.ps1 | iex; agy";
   if (driver === "codex") return "npm install -g @openai/codex && codex login";
   return "";
 }

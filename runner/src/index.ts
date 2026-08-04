@@ -13,7 +13,7 @@ import {
 } from "@ai-crew/shared";
 import { fetchEmployees } from "./employees/api.js";
 import { runClaudeDriver, runClaudeQaReview, runClaudeReviseDriver } from "./drivers/claude.js";
-import { runGeminiDriver } from "./drivers/gemini.js";
+import { runAntigravityDriver } from "./drivers/antigravity.js";
 import { runCodexDriver } from "./drivers/codex.js";
 import { runMock } from "./drivers/mock.js";
 import { invokeManager } from "./manager/invoke.js";
@@ -79,8 +79,8 @@ async function runJob(ticket: Ticket): Promise<void> {
   switch (employee.driver) {
     case "claude":
       return runClaudeDriver(ticket, employee, send);
-    case "gemini":
-      return runGeminiDriver(ticket, employee, send);
+    case "antigravity":
+      return runAntigravityDriver(ticket, employee, send);
     case "codex":
       return runCodexDriver(ticket, employee, send);
     default:
@@ -226,7 +226,8 @@ async function handleEndSessionRequest(event: { requestId: string; teamId: strin
   }
 }
 
-const DRIVER_BINARIES: Record<string, string> = { claude: "claude", gemini: "gemini", codex: "codex" };
+// antigravity의 실행파일 이름은 드라이버 이름과 다르게 agy다 (Antigravity CLI의 커맨드명).
+const DRIVER_BINARIES: Record<string, string> = { claude: "claude", antigravity: "agy", codex: "codex" };
 
 // 실행파일 이름으로 --version을 돌려본다. cross-spawn을 쓰는 이유: Windows에서 claude/gemini/codex는
 // npm 전역 설치 시 진짜 실행파일이 아니라 .cmd 쉼(shim)이라서, node의 기본 spawn/execFile은
