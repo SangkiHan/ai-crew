@@ -66,3 +66,19 @@ export async function clearEmployeeSessionId(
   delete map[sessionKey(teamId, employeeName, project)];
   await writeSessionMap(map);
 }
+
+// 웹 UI의 "세션 종료" 전용. 팀장 세션만 리셋하고 직원 세션이 남으면 팀의 기억이 반만 지워진다 -
+// 팀장은 백지인데 직원은 지난 대화를 기억한 채로 다음 티켓을 받는 어긋난 상태가 되므로,
+// 같은 팀의 직원 세션(키 접두어 "teamId|")을 전부 함께 지운다.
+export async function clearEmployeeSessionsForTeam(teamId: string): Promise<void> {
+  const map = await readSessionMap();
+  const prefix = `${teamId}|`;
+  let changed = false;
+  for (const key of Object.keys(map)) {
+    if (key.startsWith(prefix)) {
+      delete map[key];
+      changed = true;
+    }
+  }
+  if (changed) await writeSessionMap(map);
+}

@@ -18,6 +18,7 @@ import { runCodexDriver } from "./drivers/codex.js";
 import { runMock } from "./drivers/mock.js";
 import { invokeManager } from "./manager/invoke.js";
 import { clearSessionId } from "./manager/session.js";
+import { clearEmployeeSessionsForTeam } from "./employees/session.js";
 import { runPlanningDoc } from "./planning/dispatch.js";
 import { createProject } from "./projects/create.js";
 import { runConsult } from "./consult/run.js";
@@ -214,7 +215,10 @@ async function handleConsultEmployeeRequest(event: {
 // 다음 팀장 호출이 완전히 새 세션으로 시작하게 한다.
 async function handleEndSessionRequest(event: { requestId: string; teamId: string }) {
   try {
+    // 팀장 세션과 그 팀 직원들의 세션을 함께 지운다 - 팀장만 백지가 되고 직원은 지난 대화를
+    // 기억한 채 남는 어긋난 상태를 막는다. 다음 티켓부터 전원 새 세션으로 시작한다.
     await clearSessionId(event.teamId);
+    await clearEmployeeSessionsForTeam(event.teamId);
     send({ type: "end_session_result", requestId: event.requestId, success: true });
   } catch (err) {
     send({
