@@ -13,17 +13,15 @@ export const DRIVER_MODEL_OPTIONS: Record<Exclude<Driver, "mock">, DriverModelOp
     { value: "opus", label: "Opus" },
     { value: "sonnet", label: "Sonnet" },
   ],
-  gemini: [
-    { value: "auto", label: "Auto" },
-    { value: "pro", label: "Pro" },
-    { value: "flash", label: "Flash" },
-    { value: "flash-lite", label: "Flash Lite" },
+  // Antigravity CLI(agy)는 --model에 전체 모델 이름을 받는다(예: gemini-3-pro). Gemini CLI에
+  // 있던 "auto"/"pro" 같은 짧은 별칭은 agy에서 확인되지 않아 뺐다 - 미지정이 곧 자동 선택이다.
+  // 정확한 현행 목록은 `agy models`로 확인할 수 있다.
+  antigravity: [
+    { value: "gemini-3-pro", label: "Gemini 3 Pro" },
+    { value: "gemini-3-flash", label: "Gemini 3 Flash" },
     { value: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro (Preview)" },
-    { value: "gemini-3-pro-preview", label: "Gemini 3 Pro (Preview)" },
-    { value: "gemini-3-flash-preview", label: "Gemini 3 Flash (Preview)" },
     { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
     { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
-    { value: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite" },
   ],
   codex: [
     { value: "gpt-5.3-codex", label: "GPT-5.3 Codex" },

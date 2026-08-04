@@ -1,4 +1,7 @@
-export type Driver = "claude" | "gemini" | "codex" | "mock";
+// "gemini"(Gemini CLI)는 2026-06-18 서비스 종료로 "antigravity"(후속 CLI, 실행파일 agy)로
+// 대체됐다. DB에 남은 driver="gemini" 행은 서버 부팅 시 자동으로 antigravity로 바뀐다
+// (apps/server/src/employees/store.ts의 migrateLegacyGeminiDriver).
+export type Driver = "claude" | "antigravity" | "codex" | "mock";
 
 // 팀장(agents/manager.md) 전용 - 고정 파일 하나뿐이라 손으로 쓴 prompt를 그대로 들고 있다.
 export interface AgentConfig {

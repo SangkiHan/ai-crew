@@ -15,6 +15,7 @@ import { registerProjectRoutes } from "./routes/projects.js";
 import { registerConsultRoutes } from "./routes/consult.js";
 import { releaseDueTicketRetries } from "./tickets/store.js";
 import { ensureDefaultTeamAssigned } from "./teams/store.js";
+import { migrateLegacyGeminiDriver } from "./employees/store.js";
 import { registerUiWs } from "./ws/ui.js";
 import { registerRunnerWs } from "./ws/runner.js";
 
@@ -29,6 +30,8 @@ async function ensureDefaultTeamAssignedWithRetry(app: import("fastify").Fastify
   for (;;) {
     try {
       await ensureDefaultTeamAssigned();
+      // 같은 "부팅 시 자기치유" 성격이라 여기에 묶는다 - DB가 준비된 뒤에만 의미가 있다.
+      await migrateLegacyGeminiDriver();
       return;
     } catch (err) {
       app.log.warn(

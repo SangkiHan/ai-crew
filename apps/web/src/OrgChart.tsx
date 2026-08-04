@@ -41,7 +41,9 @@ const nodeTypes = { agent: AgentNode, teamLabel: TeamLabelNode, teamBox: TeamBox
 
 const DRIVER_LABEL: Record<string, string> = {
   claude: "Claude Code",
-  gemini: "Gemini CLI",
+  antigravity: "Antigravity CLI",
+  // DB 마이그레이션이 도는 짧은 순간이나 예전 스냅샷에는 gemini 값이 남아있을 수 있다.
+  gemini: "Antigravity CLI (전환 중)",
   codex: "Codex CLI",
   mock: "mock",
 };

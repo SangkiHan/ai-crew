@@ -95,6 +95,19 @@ export async function deleteEmployee(id: string): Promise<void> {
   await prisma.employee.delete({ where: { id } });
 }
 
+// Gemini CLI가 2026-06-18 종료되고 Antigravity CLI(agy)로 대체되면서, 예전에 driver="gemini"로
+// 만들어진 직원을 부팅 시 자동으로 새 드라이버로 옮긴다. ensureDefaultTeamAssigned와 같은
+// 자기치유 패턴 - 매번 불러도 대상이 없으면 아무 일도 안 한다.
+export async function migrateLegacyGeminiDriver(): Promise<void> {
+  const result = await prisma.employee.updateMany({
+    where: { driver: "gemini" },
+    data: { driver: "antigravity" },
+  });
+  if (result.count > 0) {
+    console.log(`[migrate] driver=gemini 직원 ${result.count}명을 antigravity로 전환했습니다`);
+  }
+}
+
 // 팀의 담당 프로젝트 목록이 바뀌었을 때, 더 이상 그 팀 목록에 없는 프로젝트를 직원들의
 // projects에서 걷어낸다. 이걸 안 하면 "웹 체크박스에는 안 보이는데 티켓 검증은 통과하는"
 // 유령 참조가 남는다 (직원 projects는 항상 Team.projects의 부분집합이어야 한다).

@@ -21,7 +21,7 @@ interface EmployeeBody {
 
 const DEFAULT_ALLOWED_TOOLS = ["Read", "Edit", "Write", "Bash", "Grep", "Glob"];
 const DEFAULT_REQUIRE_APPROVAL = ["git push", "rm"];
-const VALID_DRIVERS = ["claude", "gemini", "codex"];
+const VALID_DRIVERS = ["claude", "antigravity", "codex"];
 
 export function registerEmployeeRoutes(app: FastifyInstance) {
   app.get<{ Querystring: { teamId?: string } }>("/api/employees", async (req) => {
