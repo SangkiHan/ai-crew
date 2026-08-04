@@ -1,7 +1,13 @@
 import { PrismaClient } from "@prisma/client";
 import { isQaEmployee, type Employee } from "@ai-crew/shared";
+import { countActiveTicketsForRole } from "../tickets/store.js";
 
 const prisma = new PrismaClient();
+
+// 이름을 바꾸려는데 그 이름으로 아직 진행 중인 티켓이 있을 때 던진다(routes/employees.ts가
+// 409로 변환). Ticket.role이 직원 id가 아니라 이름 문자열을 그대로 저장하므로, 이름을 바꾸면
+// 그 티켓들은 러너가 더 이상 담당자를 못 찾는다(countActiveTicketsForRole 주석 참고).
+export class EmployeeRenameBlockedError extends Error {}
 
 function toEmployee(row: {
   id: string;
@@ -87,6 +93,22 @@ export async function updateEmployee(
     requireApproval: string[];
   }>
 ): Promise<Employee> {
+  if (input.name) {
+    const existing = await prisma.employee.findUniqueOrThrow({ where: { id } });
+    if (input.name !== existing.name) {
+      const active = await countActiveTicketsForRole(existing.teamId ?? "", existing.name);
+      if (active > 0) {
+        throw new EmployeeRenameBlockedError(
+          `"${existing.name}"은(는) 진행 중인 티켓이 ${active}개 있어 이름을 바꿀 수 없습니다. ` +
+            `전부 끝난 뒤(완료/실패) 다시 시도하세요.`
+        );
+      }
+    }
+  }
+  // 진행 중 티켓이 없어 이름을 바꿔도 안전하다고 확인된 뒤에도, 러너의 세션 재사용 캐시
+  // (employee-sessions.json)와 열려 있던 동료 질문(PeerMessage)은 옛 이름을 키로 갖고 있어
+  // 그대로 고아가 된다 - 무해하다(다음 티켓부터 새 이름으로 새 세션이 만들어질 뿐이고, 옛
+  // 이름으로 온 미답변 질문은 사람이 보기엔 안 남지만 애초에 사소한 질문 채널이라 감내한다).
   const row = await prisma.employee.update({ where: { id }, data: input });
   return toEmployee(row);
 }

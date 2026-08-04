@@ -150,6 +150,15 @@ function toTicket(row: {
   };
 }
 
+// 이름 변경(employees/store.ts)이 안전한지 판단하는 데 쓴다. Ticket.role은 직원의 name을
+// 그대로 저장하는 문자열이라(외래키가 아님), 이름을 바꾸는 순간 진행 중인 티켓의 role은
+// 옛 이름 그대로 남는다 - 러너는 이름으로 직원을 찾으므로(findInTeam) 그 티켓이 갑자기
+// "담당자를 찾을 수 없음"이 되어 mock으로 대체되거나 멈춘다. done/failed는 이미 세션이
+// 끝난 이력이라 role이 옛 이름이어도 무해하므로 제외한다.
+export async function countActiveTicketsForRole(teamId: string, role: string): Promise<number> {
+  return prisma.ticket.count({ where: { teamId, role, status: { notIn: ["done", "failed"] } } });
+}
+
 export async function createTicket(input: {
   teamId: string;
   role: string;

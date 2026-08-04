@@ -100,9 +100,10 @@ export function EmployeeManager({ teamId, onClose }: { teamId: string; onClose: 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 담당 프로젝트를 편집 중인 직원 (한 번에 한 명만) - id와 편집 중인 선택 상태를 함께 들고 있다.
+  // 편집 중인 직원 (한 번에 한 명만) - id와 편집 중인 필드 상태를 함께 들고 있다.
   const [editing, setEditing] = useState<{
     id: string;
+    name: string;
     driver: Driver;
     model: string;
     taskDescription: string;
@@ -148,6 +149,7 @@ export function EmployeeManager({ teamId, onClose }: { teamId: string; onClose: 
     setError(null);
     try {
       await updateEmployee(editing.id, {
+        name: editing.name.trim(),
         driver: editing.driver,
         model: editing.model || null,
         taskDescription: editing.taskDescription.trim(),
@@ -238,6 +240,7 @@ export function EmployeeManager({ teamId, onClose }: { teamId: string; onClose: 
                               ? null
                               : {
                                   id: e.id,
+                                  name: e.name,
                                   driver: e.driver,
                                   model: e.model ?? "",
                                   taskDescription: e.taskDescription,
@@ -247,7 +250,7 @@ export function EmployeeManager({ teamId, onClose }: { teamId: string; onClose: 
                         }
                         className="rounded-md bg-slate-700 px-2 py-1 text-xs text-slate-200 hover:bg-slate-600"
                       >
-                        {editing?.id === e.id ? "취소" : "담당 편집"}
+                        {editing?.id === e.id ? "취소" : "편집"}
                       </button>
                       <button
                         onClick={() => handleDelete(e.id)}
@@ -260,6 +263,13 @@ export function EmployeeManager({ teamId, onClose }: { teamId: string; onClose: 
 
                   {editing?.id === e.id && (
                     <div className="mt-3 border-t border-slate-700 pt-3">
+                      <label className="mb-2 block text-xs text-slate-400">이름</label>
+                      <input
+                        value={editing.name}
+                        onChange={(event) => setEditing({ ...editing, name: event.target.value })}
+                        disabled={submitting}
+                        className="mb-3 w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500 disabled:opacity-50"
+                      />
                       <label className="mb-2 block text-xs text-slate-400">사용 AI</label>
                       <select
                         value={editing.driver}
@@ -309,7 +319,7 @@ export function EmployeeManager({ teamId, onClose }: { teamId: string; onClose: 
                       />
                       <button
                         onClick={handleSaveEmployee}
-                        disabled={submitting || !editing.taskDescription.trim()}
+                        disabled={submitting || !editing.name.trim() || !editing.taskDescription.trim()}
                         className="mt-3 rounded-md bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500 disabled:opacity-50"
                       >
                         저장
