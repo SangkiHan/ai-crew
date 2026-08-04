@@ -112,7 +112,9 @@ async function handleRunnerEvent(event: RunnerToServerEvent, app: FastifyInstanc
     if (event.status === "review") {
       const ticket = await getTicket(event.ticketId);
       const qaEmployee = ticket ? await findQaEmployee(ticket.teamId) : null;
-      if (ticket && qaEmployee && qaEmployee.name !== ticket.role) {
+      // needsQa=false는 팀장이 티켓 생성 시 "QA까지 돌릴 만큼 위험하지 않다"고 판단한 것 -
+      // QA 직원이 있어도 검증 세션을 띄우지 않고 바로 완료 처리한다(사용량 절약).
+      if (ticket && qaEmployee && qaEmployee.name !== ticket.role && ticket.needsQa) {
         const updated = await transitionTicket(event.ticketId, "qa_review");
         await pushToAnyRunner(updated.id);
       } else {

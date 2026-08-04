@@ -66,6 +66,13 @@ server.tool(
       ),
     title: z.string().describe("티켓 제목"),
     spec: z.string().describe("직원에게 전달할 구체적인 작업 지시"),
+    needsQa: z
+      .boolean()
+      .describe(
+        "QA 검증이 필요한 티켓인지 매번 판단해서 명시하세요. 핵심 로직/데이터 스키마/결제·인증 등 " +
+          "실패 비용이 큰 변경만 true로, 문구·스타일·단순 화면 작업처럼 되돌리기 쉬운 변경은 " +
+          "false로 - QA 세션도 사용량을 소모하므로 위험한 변경만 선별해서 검증합니다."
+      ),
     parentTicketId: z
       .string()
       .optional()
@@ -74,8 +81,8 @@ server.tool(
           "이 티켓이 done이 되면 원래 티켓이 자동으로 재개됩니다."
       ),
   },
-  async ({ role, project, title, spec, parentTicketId }) => {
-    const ticket = await createTicket({ teamId: TEAM_ID!, role, project, title, spec, parentTicketId });
+  async ({ role, project, title, spec, needsQa, parentTicketId }) => {
+    const ticket = await createTicket({ teamId: TEAM_ID!, role, project, title, spec, needsQa, parentTicketId });
     return { content: [{ type: "text" as const, text: JSON.stringify(ticket, null, 2) }] };
   }
 );

@@ -115,6 +115,7 @@ function toTicket(row: {
   updatedAt: Date;
   lastHeartbeatAt: Date | null;
   qaCycles: number;
+  needsQa: boolean;
   qaNote: string | null;
   resultText: string | null;
   diffSummary: string | null;
@@ -139,6 +140,7 @@ function toTicket(row: {
     updatedAt: row.updatedAt.toISOString(),
     lastHeartbeatAt: row.lastHeartbeatAt ? row.lastHeartbeatAt.toISOString() : null,
     qaCycles: row.qaCycles,
+    needsQa: row.needsQa,
     qaNote: row.qaNote,
     resultText: row.resultText,
     diffSummary: row.diffSummary,
@@ -155,6 +157,7 @@ export async function createTicket(input: {
   title: string;
   spec: string;
   parentTicketId?: string | null;
+  needsQa?: boolean;
 }): Promise<Ticket> {
   const row = await prisma.ticket.create({
     data: { ...input, status: "queued" },
