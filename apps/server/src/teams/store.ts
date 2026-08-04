@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-import type { Team } from "@ai-crew/shared";
+import type { Driver, Team } from "@ai-crew/shared";
 
 const prisma = new PrismaClient();
 
@@ -10,6 +10,7 @@ function toTeam(row: {
   updatedAt: Date;
   projects: string[];
   managerModel: string | null;
+  managerDriver: string;
 }): Team {
   return {
     id: row.id,
@@ -18,6 +19,7 @@ function toTeam(row: {
     updatedAt: row.updatedAt.toISOString(),
     projects: row.projects,
     managerModel: row.managerModel,
+    managerDriver: row.managerDriver as Driver,
   };
 }
 
@@ -41,9 +43,15 @@ export async function updateTeamProjects(id: string, projects: string[]): Promis
   return toTeam(row);
 }
 
-// model이 null이면 팀장은 agents/manager.md 프론트매터의 기본값으로 돌아간다(runner/src/manager/invoke.ts).
-export async function updateTeamManagerModel(id: string, model: string | null): Promise<Team> {
-  const row = await prisma.team.update({ where: { id }, data: { managerModel: model } });
+// driver를 바꿀 때는 model도 함께 받는다(둘 다 null/생략 가능) - 드라이버가 바뀌면 이전
+// 드라이버 기준으로 고른 모델 값이 새 드라이버에 안 맞을 수 있어서, 호출부(routes/teams.ts)가
+// 항상 새 드라이버에 맞는 모델(또는 null=기본값)로 같이 갱신한다.
+export async function updateTeamManagerConfig(
+  id: string,
+  driver: Driver,
+  model: string | null
+): Promise<Team> {
+  const row = await prisma.team.update({ where: { id }, data: { managerDriver: driver, managerModel: model } });
   return toTeam(row);
 }
 

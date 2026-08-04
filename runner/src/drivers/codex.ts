@@ -45,8 +45,9 @@ function buildMcpConfigFlags(
 // codex의 sandbox 정책은 claude/gemini의 permission-mode와 결이 달라서(허용 명령을 개별
 // 지정하는 게 아니라 read-only/workspace-write/danger-full-access 3단계), requireApproval을
 // 세밀하게 차단할 방법이 없다. workspace-write로 워크트리 밖 파괴적 작업만 막는다.
+// 팀장 codex 실행(manager/drivers.ts)도 같은 JSONL 이벤트 포맷을 읽으므로 공유한다.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function summarizeEvent(event: any): string | null {
+export function summarizeCodexEvent(event: any): string | null {
   if (event.type === "thread.started") return `[codex] 세션 시작`;
   if (event.type === "item.completed" && event.item?.type === "agent_message") {
     const text = event.item.text ?? event.item.content;
@@ -125,7 +126,7 @@ export async function runCodexDriver(
         if (!line.trim()) continue;
         try {
           const event = JSON.parse(line);
-          const summary = summarizeEvent(event);
+          const summary = summarizeCodexEvent(event);
           emit(summary ?? `[codex] ${event.type ?? "이벤트"}`);
         } catch {
           emit(`[codex] ${line}`);

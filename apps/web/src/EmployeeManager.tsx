@@ -9,7 +9,8 @@ import {
   updateEmployee,
 } from "./lib/api.js";
 
-const DRIVER_OPTIONS: { value: string; label: string }[] = [
+// 팀장(TeamProjectsManager)도 같은 CLI 선택지를 쓰므로 여기서 export해 공유한다.
+export const DRIVER_OPTIONS: { value: string; label: string }[] = [
   { value: "claude", label: "Claude Code" },
   { value: "antigravity", label: "Antigravity CLI" },
   { value: "codex", label: "Codex CLI" },
