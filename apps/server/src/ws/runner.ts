@@ -424,7 +424,16 @@ export async function requestEndSession(teamId: string): Promise<{ success: bool
 
 async function recoverAndAssign(socket: WebSocket) {
   const orphaned = await findOrphaned();
+  // 러너가 죽었다 돌아온 직후에는 running 티켓의 하트비트가 오래돼 stale(점유 해제)로 보이는데,
+  // 바로 이 루프에서 그 티켓 자체를 되살린다 - stale 판정 때문에 같은 프로젝트의 queued까지
+  // 함께 내보내면 한 폴더에 두 세션이 동시에 도는 사고가 난다(실제 발생). 복구 대상
+  // (assigned/running)이 있는 프로젝트의 queued는 이번 라운드에서 건너뛴다 - 복구된 티켓이
+  // 끝나면 changed 이벤트가 releaseNextQueuedForProject로 알아서 다음 것을 내보낸다.
+  const busyProjects = new Set(
+    orphaned.filter((t) => t.status !== "queued").map((t) => projectKey(t.project))
+  );
   for (const ticket of orphaned) {
+    if (ticket.status === "queued" && busyProjects.has(projectKey(ticket.project))) continue;
     await pushJob(socket, ticket.id);
   }
 }
