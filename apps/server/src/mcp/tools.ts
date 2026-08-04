@@ -57,6 +57,7 @@ export function createTicket(input: {
   title: string;
   spec: string;
   parentTicketId?: string;
+  needsQa?: boolean;
 }) {
   return api("/api/tickets", { method: "POST", body: JSON.stringify(input) });
 }

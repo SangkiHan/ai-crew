@@ -31,6 +31,8 @@ export interface Ticket {
   lastHeartbeatAt: string | null;
   // QA 직원이 이 티켓을 몇 번 반려했는지. 3회 넘으면 needs_approval로 escalate한다.
   qaCycles: number;
+  // 팀장이 티켓 생성 시 정한 QA 검증 필요 여부 - false면 QA 직원이 있어도 검증을 건너뛴다.
+  needsQa: boolean;
   // QA가 남긴 가장 최근 반려 사유.
   qaNote: string | null;
   // 직원 세션의 최종 보고 텍스트. 커밋을 했든 안 했든 항상 채워진다 - 검수 화면에서 raw 로그

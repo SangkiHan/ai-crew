@@ -41,11 +41,13 @@ interface CreateTicketBody {
   title: string;
   spec: string;
   parentTicketId?: string;
+  // QA 검증 필요 여부 - 생략하면 true(기존 동작). 팀장의 create_ticket MCP 툴은 매번 명시한다.
+  needsQa?: boolean;
 }
 
 export function registerTicketRoutes(app: FastifyInstance) {
   app.post<{ Body: CreateTicketBody }>("/api/tickets", async (req, reply) => {
-    const { teamId, role, project, title, spec, parentTicketId } = req.body;
+    const { teamId, role, project, title, spec, parentTicketId, needsQa } = req.body;
     if (!teamId || !role || !project || !title || !spec) {
       return reply.code(400).send({ error: "teamId, role, project, title, spec are required" });
     }
@@ -70,7 +72,15 @@ export function registerTicketRoutes(app: FastifyInstance) {
     }
     // 티켓 push는 store의 ticketEvents("changed") 구독자(ws/runner.ts) 쪽 한 곳에서만 처리한다.
     // 여기서 별도로 pushToAnyRunner를 부르면 같은 티켓이 두 번 assign되는 버그가 생긴다.
-    return createTicket({ teamId: employee.teamId, role, project: resolvedProject, title, spec, parentTicketId });
+    return createTicket({
+      teamId: employee.teamId,
+      role,
+      project: resolvedProject,
+      title,
+      spec,
+      parentTicketId,
+      needsQa,
+    });
   });
 
   app.get<{ Querystring: { status?: string; teamId?: string } }>("/api/tickets", async (req) => {
