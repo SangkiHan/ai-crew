@@ -14,6 +14,7 @@ import {
 import { fetchEmployees } from "./employees/api.js";
 import { runClaudeDriver, runClaudeQaReview, runClaudeReviseDriver } from "./drivers/claude.js";
 import { runAntigravityDriver } from "./drivers/antigravity.js";
+import { envWithAgyPath } from "./antigravity-path.js";
 import { runCodexDriver } from "./drivers/codex.js";
 import { runMock } from "./drivers/mock.js";
 import { invokeManager } from "./manager/invoke.js";
@@ -239,7 +240,9 @@ const DRIVER_BINARIES: Record<string, string> = { claude: "claude", antigravity:
 // cross-spawn이 플랫폼별로 이 문제를 알아서 처리해준다.
 function checkOneDriver(bin: string): Promise<DriverStatus> {
   return new Promise((resolve) => {
-    const child = spawn(bin, ["--version"]);
+    // agy만 알려진 설치 경로로 PATH를 보강한다(antigravity-path.ts 주석 참고) - claude/codex는
+    // 오래전부터 설치돼 있어 프로세스가 물려받은 PATH에 이미 있는 게 보통이라 해당 없다.
+    const child = spawn(bin, ["--version"], bin === "agy" ? { env: envWithAgyPath() } : undefined);
     let stdout = "";
     let stderr = "";
     child.stdout?.on("data", (chunk: Buffer) => (stdout += chunk.toString()));

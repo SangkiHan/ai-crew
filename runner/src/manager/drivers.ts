@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import spawn from "cross-spawn";
+import { envWithAgyPath } from "../antigravity-path.js";
 import { runClaudeHeadless } from "../claude/headless.js";
 import { summarizeCodexEvent } from "../drivers/codex.js";
 import { readSessionId, writeSessionId } from "./session.js";
@@ -103,7 +104,7 @@ export async function runManagerAntigravity(
 
   let stdoutTail = "";
   const success = await new Promise<boolean>((resolve) => {
-    const child = spawn("agy", args, { cwd: MANAGER_CWD });
+    const child = spawn("agy", args, { cwd: MANAGER_CWD, env: envWithAgyPath() });
     let buffer = "";
     let stderr = "";
 

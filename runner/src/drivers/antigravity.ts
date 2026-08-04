@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import spawn from "cross-spawn";
 import type { Employee, RunnerToServerEvent, Ticket } from "@ai-crew/shared";
+import { envWithAgyPath } from "../antigravity-path.js";
 import { prepareEmployeeJob, reportDriverResult } from "../employees/prepare.js";
 
 const execFileAsync = promisify(execFile);
@@ -87,7 +88,7 @@ export async function runAntigravityDriver(
 
   let stdoutTail = "";
   const success = await new Promise<boolean>((resolve) => {
-    const child = spawn("agy", args, { cwd });
+    const child = spawn("agy", args, { cwd, env: envWithAgyPath() });
 
     let buffer = "";
     let stderr = "";
