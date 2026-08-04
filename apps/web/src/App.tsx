@@ -62,7 +62,7 @@ export function App() {
             disabled={!selectedTeamId}
             className="rounded-md border border-slate-700 px-3 py-1 text-xs text-slate-300 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            프로젝트 관리
+            팀 설정
           </button>
           <button
             onClick={() => setManagingEmployees(true)}

@@ -1,10 +1,12 @@
 import type { FastifyInstance } from "fastify";
+import { isKnownDriverModel } from "@ai-crew/shared";
 import {
   countEmployeesInTeam,
   createTeam,
   deleteTeam,
   getTeam,
   listTeams,
+  updateTeamManagerModel,
   updateTeamProjects,
 } from "../teams/store.js";
 import { pruneEmployeeProjects } from "../employees/store.js";
@@ -39,6 +41,21 @@ export function registerTeamRoutes(app: FastifyInstance) {
       // 목록에서 빠진 프로젝트를 담당하고 있던 직원이 있으면 그 직원의 담당에서도 걷어낸다.
       await pruneEmployeeProjects(req.params.id, projects);
       return team;
+    }
+  );
+
+  // 팀장 세션의 모델을 바꾼다. model이 null/생략이면 agents/manager.md 기본값으로 되돌아간다.
+  // 팀장은 항상 claude 드라이버라 직원의 DRIVER_MODEL_OPTIONS.claude와 같은 값 집합을 검증에 쓴다.
+  app.put<{ Params: { id: string }; Body: { model: string | null } }>(
+    "/api/teams/:id/manager-model",
+    async (req, reply) => {
+      const existing = await getTeam(req.params.id);
+      if (!existing) return reply.code(404).send({ error: "not found" });
+      const model = req.body.model?.trim() || null;
+      if (model && !isKnownDriverModel("claude", model)) {
+        return reply.code(400).send({ error: `알 수 없는 모델입니다: ${model}` });
+      }
+      return updateTeamManagerModel(req.params.id, model);
     }
   );
 
