@@ -9,6 +9,7 @@ function toTeam(row: {
   createdAt: Date;
   updatedAt: Date;
   projects: string[];
+  managerModel: string | null;
 }): Team {
   return {
     id: row.id,
@@ -16,6 +17,7 @@ function toTeam(row: {
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     projects: row.projects,
+    managerModel: row.managerModel,
   };
 }
 
@@ -36,6 +38,12 @@ export async function createTeam(name: string, projects?: string[]): Promise<Tea
 
 export async function updateTeamProjects(id: string, projects: string[]): Promise<Team> {
   const row = await prisma.team.update({ where: { id }, data: { projects } });
+  return toTeam(row);
+}
+
+// model이 null이면 팀장은 agents/manager.md 프론트매터의 기본값으로 돌아간다(runner/src/manager/invoke.ts).
+export async function updateTeamManagerModel(id: string, model: string | null): Promise<Team> {
+  const row = await prisma.team.update({ where: { id }, data: { managerModel: model } });
   return toTeam(row);
 }
 

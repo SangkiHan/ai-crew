@@ -34,6 +34,14 @@ export function updateTeamProjects(id: string, projects: string[]): Promise<Team
   }).then((res) => json<Team>(res));
 }
 
+export function updateTeamManagerModel(id: string, model: string | null): Promise<Team> {
+  return fetch(`/api/teams/${id}/manager-model`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model }),
+  }).then((res) => json<Team>(res));
+}
+
 export function fetchTickets(): Promise<Ticket[]> {
   return fetch("/api/tickets").then((res) => json<Ticket[]>(res));
 }

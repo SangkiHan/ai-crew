@@ -1,9 +1,14 @@
 import { useState } from "react";
+import { DRIVER_MODEL_OPTIONS } from "@ai-crew/shared";
 import { useStore } from "./store.js";
-import { updateTeamProjects } from "./lib/api.js";
+import { updateTeamManagerModel, updateTeamProjects } from "./lib/api.js";
 
-// 팀이 담당하는 프로젝트 이름/절대경로 목록을 관리한다. 팀장 호출 시 이 목록이 시스템
-// 프롬프트에 그대로 포함되어, list_projects MCP 툴 연결 여부와 무관하게 팀장이 자기 담당
+// 팀장은 항상 claude 드라이버로 실행되므로(agents/manager.md), 모델 선택지는 직원 관리에서
+// claude 직원에게 쓰는 것과 같은 목록을 그대로 재사용한다.
+const MANAGER_MODEL_OPTIONS = DRIVER_MODEL_OPTIONS.claude;
+
+// 팀이 담당하는 프로젝트 이름/절대경로 목록과 팀장 모델을 관리한다. 프로젝트 목록은 팀장 호출 시
+// 시스템 프롬프트에 그대로 포함되어, list_projects MCP 툴 연결 여부와 무관하게 팀장이 자기 담당
 // 프로젝트를 확실히 알 수 있게 한다 (선택 사항 - 비워두면 기존처럼 list_projects로 스캔).
 export function TeamProjectsManager({ teamId, onClose }: { teamId: string; onClose: () => void }) {
   const teams = useStore((s) => s.teams);
@@ -13,6 +18,7 @@ export function TeamProjectsManager({ teamId, onClose }: { teamId: string; onClo
   const [newProject, setNewProject] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [modelSubmitting, setModelSubmitting] = useState(false);
 
   async function save(nextProjects: string[]) {
     setSubmitting(true);
@@ -24,6 +30,20 @@ export function TeamProjectsManager({ teamId, onClose }: { teamId: string; onClo
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  // null = agents/manager.md 프론트매터의 기본 모델을 그대로 쓴다("기본값" 선택지).
+  async function saveModel(model: string | null) {
+    setModelSubmitting(true);
+    setError(null);
+    try {
+      const updated = await updateTeamManagerModel(teamId, model);
+      setTeams(teams.map((t) => (t.id === teamId ? updated : t)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setModelSubmitting(false);
     }
   }
 
@@ -47,13 +67,49 @@ export function TeamProjectsManager({ teamId, onClose }: { teamId: string; onClo
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-xl border border-slate-700 bg-slate-900 shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-800 px-5 py-3">
-          <h2 className="text-base font-semibold text-slate-100">프로젝트 관리 ({team?.name})</h2>
+          <h2 className="text-base font-semibold text-slate-100">팀 설정 ({team?.name})</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-200">
             ✕
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-5">
+          <h3 className="mb-2 text-sm font-semibold text-slate-200">팀장 모델</h3>
+          <p className="mb-3 text-xs text-slate-500">
+            이 팀 팀장 세션에 쓸 모델입니다. 직원처럼 팀마다 다르게 고를 수 있습니다 - "기본값"은
+            agents/manager.md에 정의된 기본 모델을 그대로 씁니다.
+          </p>
+          <div className="mb-6 flex flex-wrap gap-2">
+            <button
+              onClick={() => saveModel(null)}
+              disabled={modelSubmitting}
+              className={[
+                "rounded-md border px-3 py-1.5 text-xs disabled:opacity-50",
+                !team?.managerModel
+                  ? "border-sky-500 bg-sky-500/10 text-sky-300"
+                  : "border-slate-700 text-slate-300 hover:bg-slate-800",
+              ].join(" ")}
+            >
+              기본값
+            </button>
+            {MANAGER_MODEL_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => saveModel(opt.value)}
+                disabled={modelSubmitting}
+                className={[
+                  "rounded-md border px-3 py-1.5 text-xs disabled:opacity-50",
+                  team?.managerModel === opt.value
+                    ? "border-sky-500 bg-sky-500/10 text-sky-300"
+                    : "border-slate-700 text-slate-300 hover:bg-slate-800",
+                ].join(" ")}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          <h3 className="mb-2 text-sm font-semibold text-slate-200">담당 프로젝트</h3>
           <p className="mb-4 text-xs text-slate-500">
             이 팀이 담당하는 프로젝트의 <strong className="text-slate-400">절대경로</strong>를
             등록하세요 (WORKSPACE_ROOT 밖의 다른 위치도 그대로 가능합니다 - 프로젝트가 실제로 있는

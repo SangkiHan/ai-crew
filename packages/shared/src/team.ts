@@ -6,4 +6,6 @@ export interface Team {
   updatedAt: string;
   // 이 팀이 담당하는 프로젝트 이름/절대경로 목록 (선택). 팀장 시스템 프롬프트에 그대로 포함된다.
   projects: string[];
+  // 이 팀 팀장 세션의 모델. null이면 agents/manager.md 프론트매터의 기본값을 쓴다.
+  managerModel: string | null;
 }
