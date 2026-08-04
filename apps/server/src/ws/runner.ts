@@ -231,11 +231,14 @@ export function notifyManagerOfTicketResult(
           `사용자에게 이 상황을 전달하세요. 계속 재시도할지, 포기할지는 사용자가 UI에서 승인/거부로 ` +
           `직접 결정합니다 - 당신이 대신 결정할 수는 없습니다.`
         : `직원 "${ticket.role}"의 티켓 작업이 실패로 종료됐습니다.\n\n` +
-          `- 티켓: ${ticket.title}\n- 프로젝트: ${ticket.project}\n\n` +
+          // ticketId를 명시해야 팀장이 list_tickets로 되찾는 단계 없이 바로 schedule_ticket_retry를
+          // 부를 수 있다 (같은 제목의 실패 티켓이 여러 개면 제목만으로는 특정이 안 된다).
+          `- 티켓 id: ${ticket.id}\n- 티켓: ${ticket.title}\n- 프로젝트: ${ticket.project}\n\n` +
           `## 직원의 마지막 보고\n${ticket.resultText ?? "(보고 없음)"}\n\n` +
-          `사용량/session 제한으로 보이는 원문 오류라면 schedule_ticket_retry를 사용해 제한 해제 후 ` +
-          `자동 재실행을 예약하세요. 컨텍스트 초과·코드 오류·권한 오류라면 예약하지 말고 ` +
-          `사용자에게 실패 사실과 사유를 전달하세요.`;
+          `사용량/session 제한으로 보이는 원문 오류라면 schedule_ticket_retry(위 티켓 id 사용)로 ` +
+          `제한 해제 후 자동 재실행을 예약하세요 - 오류 문구에 리셋 시각이 있으면 그 시각 조금 뒤로, ` +
+          `없으면 60분 뒤로 delayMinutes를 잡고, 예약했다는 사실과 예약 시각을 사용자에게 알리세요. ` +
+          `컨텍스트 초과·코드 오류·권한 오류라면 예약하지 말고 사용자에게 실패 사실과 사유를 전달하세요.`;
   requestManagerInvocation(ticket.teamId, message);
 }
 
