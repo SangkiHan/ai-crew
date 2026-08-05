@@ -293,6 +293,11 @@ export function requestPlanningDocJob(doc: PlanningDoc, message: string, resumeS
     employeeName: doc.employeeName,
     message,
     resumeSessionId,
+    // markPlanningDocRevising은 content를 건드리지 않으므로, 수정 요청일 때 doc.content는
+    // 항상 "이번 수정 전의 직전 초안"이다 - 세션을 이어갈 수 없는 드라이버가 이걸로 맥락을
+    // 되살린다.
+    originalRequest: doc.request,
+    previousContent: doc.content,
   };
   socket.send(JSON.stringify(event));
 }

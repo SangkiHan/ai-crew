@@ -122,6 +122,8 @@ async function handlePlanningDocAssign(event: {
   employeeName: string;
   message: string;
   resumeSessionId?: string;
+  originalRequest: string;
+  previousContent: string | null;
 }) {
   const employees = await fetchEmployees();
   const employee = findInTeam(employees, event.teamId, event.employeeName);
@@ -134,7 +136,15 @@ async function handlePlanningDocAssign(event: {
     });
     return;
   }
-  return runPlanningDoc(event.planningDocId, employee, event.message, send, event.resumeSessionId);
+  return runPlanningDoc(
+    event.planningDocId,
+    employee,
+    event.message,
+    event.originalRequest,
+    event.previousContent,
+    send,
+    event.resumeSessionId
+  );
 }
 
 // 브라우저 채팅바 -> 서버 -> 여기로 온다. 티켓 큐와는 별개 경로 (동시 실행 수 제한에 안 걸림).
