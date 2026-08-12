@@ -52,6 +52,7 @@ const pendingConsultRequests = new Map<
   (result: { success: boolean; answer?: string; error?: string }) => void
 >();
 const pendingEndSessionRequests = new Map<string, (result: { success: boolean; error?: string }) => void>();
+const pendingLaunchInfraBrowserRequests = new Map<string, (result: { success: boolean; error?: string }) => void>();
 
 export function registerRunnerWs(app: FastifyInstance) {
   app.get("/ws/runner", { websocket: true }, (socket: WebSocket) => {
@@ -200,6 +201,12 @@ async function handleRunnerEvent(event: RunnerToServerEvent, app: FastifyInstanc
       resolve({ success: event.success, error: event.error });
       pendingEndSessionRequests.delete(event.requestId);
     }
+  } else if (event.type === "launch_infra_browser_result") {
+    const resolve = pendingLaunchInfraBrowserRequests.get(event.requestId);
+    if (resolve) {
+      resolve({ success: event.success, error: event.error });
+      pendingLaunchInfraBrowserRequests.delete(event.requestId);
+    }
   }
 }
 
@@ -339,6 +346,28 @@ export async function requestDriverStatus(): Promise<Record<string, DriverStatus
     pendingDriverStatusChecks.set(requestId, (status) => {
       clearTimeout(timeout);
       resolve(status);
+    });
+    socket.send(JSON.stringify(event));
+  });
+}
+
+// 웹 UI의 "인프라 크롬" 버튼이 호출한다. 실제 크롬 실행은 호스트(러너)에서만 가능하다
+// (서버는 컨테이너 안이라 호스트에 브라우저를 띄울 수 없다).
+export async function requestLaunchInfraBrowser(): Promise<{ success: boolean; error?: string }> {
+  const socket = [...runnerSockets][0];
+  if (!socket) return { success: false, error: "러너가 연결되어 있지 않습니다." };
+
+  const requestId = crypto.randomUUID();
+  const event: ServerToRunnerEvent = { type: "launch_infra_browser_request", requestId };
+
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      pendingLaunchInfraBrowserRequests.delete(requestId);
+      resolve({ success: false, error: "5초 안에 응답이 없습니다." });
+    }, 5000);
+    pendingLaunchInfraBrowserRequests.set(requestId, (result) => {
+      clearTimeout(timeout);
+      resolve(result);
     });
     socket.send(JSON.stringify(event));
   });

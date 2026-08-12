@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { launchInfraBrowser } from "./lib/api.js";
+import { Markdown } from "./Markdown.js";
 import { useStore, type ChatMessage } from "./store.js";
 
 // zustand(React useSyncExternalStore)는 매 렌더마다 selector가 "같은" 스냅샷을 반환하는지
@@ -23,6 +25,7 @@ export function ChatBar({
   const [text, setText] = useState("");
   const [planningMode, setPlanningMode] = useState(false);
   const [endingSession, setEndingSession] = useState(false);
+  const [launchingBrowser, setLaunchingBrowser] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
 
   // 새로고침/재접속해도 대화가 이어져 보이도록, 팀이 바뀌거나 처음 뜰 때 서버에 저장된
@@ -51,6 +54,20 @@ export function ChatBar({
     }
   }
 
+  // 러너 호스트에 --remote-debugging-port를 연 크롬을 띄운다. 여기 한 번만 로그인/이동해두면
+  // INFRA_BROWSER_ENABLED가 켜진 팀장이 나중에 CDP로 이어서 조작한다(README "인프라 자동화" 참고).
+  async function handleLaunchInfraBrowser() {
+    setLaunchingBrowser(true);
+    try {
+      const result = await launchInfraBrowser();
+      if (!result.success) alert(result.error ?? "크롬 실행에 실패했습니다.");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLaunchingBrowser(false);
+    }
+  }
+
   async function handleSend() {
     const message = text.trim();
     if (!message || managerStatus === "busy") return;
@@ -64,18 +81,28 @@ export function ChatBar({
   return (
     <div className="flex h-full flex-col bg-slate-900/80">
       <div className="flex items-center justify-between border-b border-slate-800 px-3 py-2">
-        <button
-          onClick={() => setPlanningMode((v) => !v)}
-          className={[
-            "rounded-md border px-2 py-1 text-xs font-medium",
-            planningMode
-              ? "border-amber-500 bg-amber-500/10 text-amber-300"
-              : "border-slate-700 text-slate-400 hover:bg-slate-800",
-          ].join(" ")}
-          title="켜면 팀장이 기획 담당 직원에게 서비스 기획서 작성을 위임합니다"
-        >
-          기획{planningMode ? " ✓" : ""}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setPlanningMode((v) => !v)}
+            className={[
+              "rounded-md border px-2 py-1 text-xs font-medium",
+              planningMode
+                ? "border-amber-500 bg-amber-500/10 text-amber-300"
+                : "border-slate-700 text-slate-400 hover:bg-slate-800",
+            ].join(" ")}
+            title="켜면 팀장이 기획 담당 직원에게 서비스 기획서 작성을 위임합니다"
+          >
+            기획{planningMode ? " ✓" : ""}
+          </button>
+          <button
+            onClick={handleLaunchInfraBrowser}
+            disabled={launchingBrowser}
+            className="rounded-md border border-slate-700 px-2 py-1 text-xs font-medium text-slate-400 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+            title="원격 디버깅 포트를 연 크롬을 새로 띄웁니다. 여기서 로그인/화면 이동해두면 인프라 자동화(INFRA_BROWSER_ENABLED)가 켜진 팀장이 이어서 조작할 수 있습니다"
+          >
+            {launchingBrowser ? "크롬 여는 중..." : "인프라 크롬"}
+          </button>
+        </div>
         <div className="flex items-center gap-3">
           <button onClick={onOpenPastSessions} className="text-xs text-slate-500 hover:text-slate-300">
             지난 대화
@@ -101,11 +128,14 @@ export function ChatBar({
             <div key={m.id} className={["mb-2 flex", m.role === "user" ? "justify-end" : "justify-start"].join(" ")}>
               <div
                 className={[
-                  "max-w-[80%] whitespace-pre-wrap rounded-lg px-3 py-1.5 text-sm",
-                  m.role === "user" ? "bg-sky-600 text-white" : "bg-slate-800 text-slate-200",
+                  "max-w-[80%] rounded-lg px-3 py-1.5",
+                  m.role === "user" ? "whitespace-pre-wrap bg-sky-600 text-sm text-white" : "bg-slate-800 text-slate-200",
                 ].join(" ")}
               >
-                {m.text || (m.pending ? "…" : "")}
+                {/* 팀장 응답은 마크다운으로 오는 경우가 많아 그대로 렌더링한다. 사용자 자신이 친
+                    메시지는 마크다운으로 해석할 이유가 없으니(오히려 "*" 같은 문자를 그대로
+                    보여줘야 함) 예전처럼 pre-wrap 텍스트로 남긴다. */}
+                {m.role === "user" ? m.text || (m.pending ? "…" : "") : <Markdown text={m.text || (m.pending ? "…" : "")} />}
               </div>
             </div>
           ))

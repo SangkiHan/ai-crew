@@ -13,6 +13,7 @@ import { registerPlanningDocRoutes } from "./routes/planning-docs.js";
 import { registerMemoryRoutes } from "./routes/memory.js";
 import { registerProjectRoutes } from "./routes/projects.js";
 import { registerConsultRoutes } from "./routes/consult.js";
+import { registerInfraBrowserRoutes } from "./routes/infra-browser.js";
 import { releaseDueTicketRetries } from "./tickets/store.js";
 import { ensureDefaultTeamAssigned } from "./teams/store.js";
 import { migrateLegacyGeminiDriver } from "./employees/store.js";
@@ -62,6 +63,7 @@ async function main() {
   registerMemoryRoutes(app);
   registerProjectRoutes(app);
   registerConsultRoutes(app);
+  registerInfraBrowserRoutes(app);
   registerUiWs(app);
   registerRunnerWs(app);
 

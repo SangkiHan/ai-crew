@@ -198,3 +198,9 @@ export function deleteEmployee(id: string): Promise<{ ok: true }> {
 export function fetchDriverStatus(): Promise<Record<string, DriverStatus>> {
   return fetch("/api/driver-status").then((res) => json<Record<string, DriverStatus>>(res));
 }
+
+export function launchInfraBrowser(): Promise<{ success: boolean; error?: string }> {
+  return fetch("/api/infra-browser/launch", { method: "POST" }).then((res) =>
+    json<{ success: boolean; error?: string }>(res)
+  );
+}

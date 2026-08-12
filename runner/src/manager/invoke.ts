@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import type { Driver } from "@ai-crew/shared";
 import { loadAgentDefinition } from "../agents/load.js";
 import { fetchTeams } from "../employees/api.js";
+import { INFRA_BROWSER_CDP_ENDPOINT, INFRA_BROWSER_ENABLED, INFRA_BROWSER_OUTPUT_DIR } from "../infra-browser.js";
 import { runManagerAntigravity, runManagerClaude, runManagerCodex, type ManagerResult } from "./drivers.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -29,25 +30,65 @@ const MCP_TOOL_NAMES = [
   "search_history",
   "ask_user",
   "schedule_ticket_retry",
+  "revise_ticket",
 ].map((tool) => `mcp__${MCP_SERVER_NAME}__${tool}`);
+
+// INFRA_BROWSER_ENABLED/INFRA_BROWSER_CDP_ENDPOINT는 ../infra-browser.js에 정의돼 있다 -
+// 웹 UI의 "인프라 크롬" 버튼(runner/src/index.ts의 handleLaunchInfraBrowser)도 같은 값을 써야
+// 팀장이 접속하려는 포트와 실제로 띄운 크롬의 포트가 어긋나지 않는다.
+const INFRA_BROWSER_SERVER_NAME = "ai-crew-infra-browser";
+// @playwright/mcp가 노출하는 60개+ 툴 중 화면 조작에 필요한 최소 집합만 허용한다.
+// browser_run_code_unsafe(임의 JS 실행), browser_evaluate, 쿠키/로컬스토리지 읽기·쓰기,
+// 네트워크 라우트 조작 같은 툴은 의도적으로 뺐다 - 사용자의 실제 로그인 세션을 그대로
+// 유출/변조할 수 있는 툴이라 인프라 화면을 클릭하는 용도에 필요한 범위를 넘어선다.
+// browser_close도 뺐다 - 사용자가 직접 띄워서 지켜보는 브라우저라, 팀장이 임의로 탭을
+// 닫아버리면 곤란하다.
+const INFRA_BROWSER_TOOL_NAMES = [
+  "browser_navigate",
+  "browser_navigate_back",
+  "browser_snapshot",
+  "browser_click",
+  "browser_type",
+  "browser_select_option",
+  "browser_press_key",
+  "browser_hover",
+  "browser_fill_form",
+  "browser_find",
+  "browser_wait_for",
+  "browser_take_screenshot",
+  "browser_tabs",
+  "browser_console_messages",
+].map((tool) => `mcp__${INFRA_BROWSER_SERVER_NAME}__${tool}`);
 
 export type { ManagerResult };
 
 function buildClaudeMcpConfig(teamId: string): string {
-  return JSON.stringify({
-    mcpServers: {
-      [MCP_SERVER_NAME]: {
-        type: "stdio",
-        command: "node",
-        args: [MCP_SERVER_ENTRY],
-        env: {
-          AI_CREW_SERVER_URL,
-          WORKSPACE_ROOT,
-          TEAM_ID: teamId,
-        },
+  const mcpServers: Record<string, unknown> = {
+    [MCP_SERVER_NAME]: {
+      type: "stdio",
+      command: "node",
+      args: [MCP_SERVER_ENTRY],
+      env: {
+        AI_CREW_SERVER_URL,
+        WORKSPACE_ROOT,
+        TEAM_ID: teamId,
       },
     },
-  });
+  };
+  if (INFRA_BROWSER_ENABLED) {
+    mcpServers[INFRA_BROWSER_SERVER_NAME] = {
+      type: "stdio",
+      command: "npx",
+      args: [
+        "@playwright/mcp@latest",
+        "--cdp-endpoint",
+        INFRA_BROWSER_CDP_ENDPOINT,
+        "--output-dir",
+        INFRA_BROWSER_OUTPUT_DIR,
+      ],
+    };
+  }
+  return JSON.stringify({ mcpServers });
 }
 
 // 팀에 등록된 담당 프로젝트 목록을 시스템 프롬프트에 그대로 박아 넣는다. list_projects MCP
@@ -79,6 +120,9 @@ export async function invokeManager(
   const model = team?.managerModel ?? agent.model;
 
   switch (driver) {
+    // antigravity/codex는 개별 MCP 툴 화이트리스트가 없어서(파일 상단 주석 참고), 인프라
+    // 브라우저 서버를 붙이면 위험한 툴까지 전부 열린다 - 그래서 INFRA_BROWSER_ENABLED여도
+    // 이 두 드라이버에는 아직 연결하지 않는다. claude 드라이버 팀장에서만 지원한다.
     case "antigravity":
       return runManagerAntigravity(teamId, message, systemPrompt, model, onEvent);
     case "codex":
@@ -89,7 +133,7 @@ export async function invokeManager(
         teamId,
         message,
         systemPrompt,
-        [...agent.allowedTools, ...MCP_TOOL_NAMES],
+        [...agent.allowedTools, ...MCP_TOOL_NAMES, ...(INFRA_BROWSER_ENABLED ? INFRA_BROWSER_TOOL_NAMES : [])],
         model,
         buildClaudeMcpConfig(teamId),
         onEvent

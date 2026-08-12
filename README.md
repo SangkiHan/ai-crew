@@ -181,6 +181,56 @@ queued(대기) → assigned(배정) → running(작업중) ─┬→ review(검�
 다음 요청부터 보인다). **`WORKSPACE_ROOT` 밖의 임의 절대경로도** 사용자가 팀장에게 경로를 알려주면
 그대로 작업 대상으로 쓸 수 있다 — `project` 값에 절대경로를 넣으면 러너가 그 경로를 그대로 쓴다.
 
+### 인프라 자동화 (선택, 기본 꺼짐) — 도메인/DNS/SSL 콘솔을 팀장이 직접 조작
+
+설계 배경은 [`docs/INFRA_MANAGER_PLAN.md`](./docs/INFRA_MANAGER_PLAN.md) 참고. API/CLI가 없는
+인프라 콘솔(도메인 등록업체, 클라우드 대시보드 등)은 팀장이 [`@playwright/mcp`](https://www.npmjs.com/package/@playwright/mcp)로
+브라우저를 직접 조작해 처리할 수 있다. **직원에게 위임하는 게 아니라 팀장이 직접 한다** —
+사용자와 실시간으로 대화하며 진행 상황을 지켜보고 개입할 수 있어야 하는 작업이라, 백그라운드에서
+알아서 끝내고 보고하는 직원의 티켓 모델과는 안 맞기 때문이다.
+
+팀장은 새 브라우저를 몰래 띄우지 않는다. **사용자가 직접 띄워서 로그인하고 원하는 화면까지
+이동해둔 실제 브라우저·실제 탭에 CDP(Chrome DevTools Protocol)로 그대로 이어서 붙는다** — 그래야
+사용자가 화면을 실시간으로 지켜보고 개입할 수 있고, 매번 로그인부터 새로 할 필요도 없다.
+
+**켜는 법** (`.env`):
+
+```bash
+INFRA_BROWSER_ENABLED=true
+# 생략하면 http://localhost:9222 (크롬 원격 디버깅 기본 포트)
+INFRA_BROWSER_CDP_ENDPOINT=http://localhost:9222
+```
+
+1. `npx playwright install chromium`으로 브라우저를 한 번 받아둔다.
+2. **인프라 작업을 할 때마다**, 원격 디버깅 포트를 연 크롬을 직접 띄운다 (평소 쓰는 메인
+   프로필과는 분리된 전용 프로필을 쓰는 걸 권장한다 — 관련 없는 다른 계정까지 팀장이 접근
+   가능한 상태가 되는 걸 막기 위해서다):
+
+   ```bash
+   # Windows
+   chrome.exe --remote-debugging-port=9222 --user-data-dir="C:\ai-crew-infra-profile"
+   # macOS
+   open -a "Google Chrome" --args --remote-debugging-port=9222 --user-data-dir="$HOME/ai-crew-infra-profile"
+   ```
+3. 그 크롬으로 필요한 사이트(도메인 등록업체, 클라우드 콘솔 등)에 로그인하고, 작업을 시작할
+   화면까지 미리 이동해둔다.
+4. `.env`에 `INFRA_BROWSER_ENABLED=true`를 켜고 러너를 재시작한 뒤, 팀장에게 "지금 열어둔
+   화면에서 이어서 해줘"라고 지시한다.
+
+**켜져 있을 때 팀장이 하는 일과 안 하는 일**은 `agents/manager.md`에 명시돼 있다 — 요약하면,
+시작하면 먼저 지금 화면이 뭔지 확인하고(짐작하지 않음), 화면 조회/스크린샷은 자유롭게 하지만
+**실제로 상태를 바꾸는 조작(저장·등록·발급·배포·삭제)은 반드시 먼저 채팅으로 뭘 하려는지 설명하고,
+사용자가 다음 메시지로 승인해야만 실행**한다. 로그인은 직접 시도하지 않는다 — 로그인이 안 되어
+있으면 사용자에게 알린다. 탭을 임의로 닫지도 않는다.
+
+**현재 제약**: `claude` 드라이버 팀장에서만 지원한다. Antigravity/Codex는 MCP 툴을 개별적으로
+화이트리스트할 방법이 없어서, 이 기능을 붙이면 위험한 툴(임의 JS 실행, 쿠키 조작 등)까지 전부
+열리기 때문에 아직 연결하지 않았다. 팀별로 켜고 끄는 기능도 없다 — 켜면 모든 팀의 팀장에 적용된다.
+
+`@playwright/mcp`가 남기는 스냅샷/콘솔 로그는 저장소 밖(`~/.ai-crew/infra-browser-output`,
+`INFRA_BROWSER_OUTPUT_DIR`로 변경 가능)에 쌓이도록 `--output-dir`을 지정해뒀다 — 저장소 안에
+`.playwright-mcp/` 폴더가 쌓이지 않는다.
+
 ## 지금까지 실제로 만들어진 것
 
 - **0~4단계 (완료, MVP)**: 서버·DB·조직도 UI 골격, 티켓 상태머신 + 러너, 팀장의 MCP 툴 연결, 실제

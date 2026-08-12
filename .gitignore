@@ -7,3 +7,4 @@ build/
 *.tsbuildinfo
 apps/server/prisma/dev.db
 .run/
+.playwright-mcp/

@@ -24,6 +24,7 @@ import { clearEmployeeSessionsForTeam } from "./employees/session.js";
 import { runPlanningDoc } from "./planning/dispatch.js";
 import { createProject } from "./projects/create.js";
 import { runConsult } from "./consult/run.js";
+import { launchInfraBrowser } from "./infra-browser.js";
 
 const SERVER_WS_URL = process.env.SERVER_WS_URL ?? "ws://localhost:8080/ws/runner";
 const MAX_CONCURRENT = Number(process.env.RUNNER_MAX_CONCURRENT ?? 2);
@@ -293,6 +294,12 @@ function handleJobCancel(ticketId: string) {
   killDriverProcess(ticketId).catch((err) => console.error(`[runner] job_cancel 처리 실패 (${ticketId})`, err));
 }
 
+// 웹 UI의 "인프라 크롬" 버튼이 부른다 - 실제 크롬 실행은 infra-browser.ts 참고.
+async function handleLaunchInfraBrowser(requestId: string) {
+  const result = await launchInfraBrowser();
+  send({ type: "launch_infra_browser_result", requestId, success: result.success, error: result.error });
+}
+
 function drain() {
   while (active < MAX_CONCURRENT && queue.length > 0) {
     const item = queue.shift()!;
@@ -401,6 +408,8 @@ function connect() {
       handleInvokeManager(event.requestId, event.teamId, event.message);
     } else if (event.type === "check_driver_status") {
       handleCheckDriverStatus(event.requestId);
+    } else if (event.type === "launch_infra_browser_request") {
+      handleLaunchInfraBrowser(event.requestId);
     } else if (event.type === "planning_doc_assign") {
       handlePlanningDocAssign(event);
     } else if (event.type === "create_project_request") {

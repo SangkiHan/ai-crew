@@ -51,7 +51,8 @@ export type RunnerToServerEvent =
     }
   | { type: "create_project_result"; requestId: string; success: boolean; path?: string; error?: string }
   | { type: "consult_employee_result"; requestId: string; success: boolean; answer?: string; error?: string }
-  | { type: "end_session_result"; requestId: string; success: boolean; error?: string };
+  | { type: "end_session_result"; requestId: string; success: boolean; error?: string }
+  | { type: "launch_infra_browser_result"; requestId: string; success: boolean; error?: string };
 
 export type ServerToRunnerEvent =
   | { type: "job_assign"; ticket: Ticket }
@@ -105,4 +106,7 @@ export type ServerToRunnerEvent =
       // 진행 중인 작업을 위한 질문이라 답의 성격이 다르다.
       fromEmployeeName?: string;
     }
-  | { type: "end_session_request"; requestId: string; teamId: string };
+  | { type: "end_session_request"; requestId: string; teamId: string }
+  // 웹 UI의 "인프라 크롬" 버튼이 보낸다. 러너가 호스트에서 --remote-debugging-port를 연 크롬을
+  // 직접 띄운다 - 팀장은 이 크롬에 나중에 CDP로 붙어서 이어서 조작한다(docs/INFRA_MANAGER_PLAN.md).
+  | { type: "launch_infra_browser_request"; requestId: string };
