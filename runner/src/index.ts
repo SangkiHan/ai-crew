@@ -12,6 +12,7 @@ import {
   type Ticket,
 } from "@ai-crew/shared";
 import { fetchEmployees } from "./employees/api.js";
+import { killDriverProcess } from "./employees/prepare.js";
 import { runClaudeDriver, runClaudeQaReview, runClaudeReviseDriver } from "./drivers/claude.js";
 import { runAntigravityDriver } from "./drivers/antigravity.js";
 import { envWithAgyPath } from "./antigravity-path.js";
@@ -279,6 +280,19 @@ async function handleCheckDriverStatus(requestId: string) {
   send({ type: "driver_status_result", requestId, status });
 }
 
+// 사용자가 웹에서 실행 중인 티켓을 강제 종료하면 서버가 보낸다. 서버는 이미 티켓을 failed로
+// 바꿔뒀으니, 여기서는 실제로(또는 곧) 도는 걸 멈추기만 하면 된다 - 아직 순번을 기다리며 로컬
+// 큐에 있으면 그대로 빼버리고(active로 세지 않은 항목이라 카운터 조정 불필요), 이미 프로세스가
+// 떠 있으면 pid로 죽인다. 어느 쪽도 아니면(이미 끝났거나 애초에 없던 티켓) 조용히 무시된다.
+function handleJobCancel(ticketId: string) {
+  const idx = queue.findIndex((item) => item.ticket.id === ticketId);
+  if (idx !== -1) {
+    queue.splice(idx, 1);
+    console.log(`[runner] 대기열에서 취소된 티켓 제거: ${ticketId}`);
+  }
+  killDriverProcess(ticketId).catch((err) => console.error(`[runner] job_cancel 처리 실패 (${ticketId})`, err));
+}
+
 function drain() {
   while (active < MAX_CONCURRENT && queue.length > 0) {
     const item = queue.shift()!;
@@ -395,6 +409,8 @@ function connect() {
       handleConsultEmployeeRequest(event);
     } else if (event.type === "end_session_request") {
       handleEndSessionRequest(event);
+    } else if (event.type === "job_cancel") {
+      handleJobCancel(event.ticketId);
     }
   });
 

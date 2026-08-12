@@ -23,7 +23,7 @@ const ORPHAN_STATUSES: TicketStatus[] = ["queued", "assigned", "running"];
 // 티켓이 둘 이상 있으면 서로의 파일을 덮어쓴다 - 실제로 두 세션이 같은 트리를 동시에 고치다가
 // 한쪽이 "커밋할 수 없다"며 blocked를 낸 사고가 있었다. review/blocked/needs_approval/done/failed는
 // 세션이 이미 끝난 상태라 폴더를 잡고 있지 않으므로 여기 포함하지 않는다.
-const PROJECT_BUSY_STATUSES: TicketStatus[] = ["assigned", "running", "qa_review"];
+export const PROJECT_BUSY_STATUSES: TicketStatus[] = ["assigned", "running", "qa_review"];
 
 // 프로젝트 문자열이 절대경로일 수도, 이름만일 수도 있어서(팀장이 둘 다 넘길 수 있다) 마지막
 // 경로 세그먼트를 소문자로 비교한다. 서버는 리눅스 컨테이너라 node:path가 윈도우 "\"를 못

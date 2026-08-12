@@ -188,7 +188,14 @@ export async function runClaudeHeadless(opts: HeadlessRunOptions): Promise<Headl
   return new Promise((resolve, reject) => {
     // 메시지를 stdin으로 쓰고 나면 반드시 end()해야 한다 - 열어둔 채로 두면 claude가 몇 초간
     // 추가 입력을 기다리다 포기하는 동작이 관찰된 적이 있다("Warning: no stdin data received").
-    const child = spawn("claude", args, { cwd: opts.cwd, stdio: ["pipe", "pipe", "pipe"] });
+    // ask_employee MCP 툴은 서버에서 최대 20분(apps/server/src/ws/runner.ts의 CONSULT_TIMEOUT_MS)까지
+    // 기다렸다가 답한다. MCP_TOOL_TIMEOUT을 안 늘려두면 claude CLI 자신의 MCP 툴 호출 클라이언트
+    // 타임아웃이 먼저 끊어버려서 서버 쪽을 늘린 게 무의미해진다 - 같은 값으로 맞춘다.
+    const child = spawn("claude", args, {
+      cwd: opts.cwd,
+      stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, MCP_TOOL_TIMEOUT: "1200000" },
+    });
     opts.onSpawn?.(child.pid);
     child.stdin!.end(message, "utf-8");
 

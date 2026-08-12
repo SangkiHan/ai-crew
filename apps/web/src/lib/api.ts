@@ -149,6 +149,10 @@ export function retryTicket(id: string): Promise<Ticket> {
   return fetch(`/api/tickets/${id}/retry`, { method: "POST" }).then((res) => json<Ticket>(res));
 }
 
+export function cancelTicket(id: string): Promise<Ticket> {
+  return fetch(`/api/tickets/${id}/cancel`, { method: "POST" }).then((res) => json<Ticket>(res));
+}
+
 export function fetchEmployees(): Promise<Employee[]> {
   return fetch("/api/employees").then((res) => json<Employee[]>(res));
 }

@@ -4,6 +4,7 @@ import {
   createTicket,
   getTicket,
   listTickets,
+  PROJECT_BUSY_STATUSES,
   projectKey,
   retryFailedTicket,
   scheduleTicketRetry,
@@ -15,6 +16,7 @@ import { getTeam } from "../teams/store.js";
 import {
   notifyManagerOfTicketResult,
   pushToAnyRunner,
+  requestJobCancel,
   requestManagerInvocation,
   requestTicketRevise,
 } from "../ws/runner.js";
@@ -145,6 +147,29 @@ export function registerTicketRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: `cannot reject ticket in status ${ticket.status}` });
     }
     return transitionTicket(ticket.id, "failed");
+  });
+
+  // 사람이 웹에서 "강제 종료"를 누른다. review/needs_approval/blocked용 /reject와 달리 이 상태들은
+  // 세션이 실제로 지금 그 프로젝트 폴더에서 돌고 있으므로(PROJECT_BUSY_STATUSES), 티켓 상태만
+  // 바꾸는 게 아니라 러너에게 job_cancel을 보내 그 프로세스도 같이 죽여야 한다 - 안 그러면 이미
+  // failed로 표시된 티켓인데 세션은 계속 돌면서 뒤늦게 커밋하거나 job_status를 보내는 유령 작업이
+  // 된다. "취소" 상태를 새로 만들지 않고 기존 failed를 재사용한다 - 재시도(retry) 버튼도 자연스럽게
+  // 따라온다.
+  app.post<{ Params: { id: string } }>("/api/tickets/:id/cancel", async (req, reply) => {
+    const ticket = await getTicket(req.params.id);
+    if (!ticket) return reply.code(404).send({ error: "not found" });
+    if (!PROJECT_BUSY_STATUSES.includes(ticket.status)) {
+      return reply.code(400).send({ error: `실행 중인 티켓만 강제 종료할 수 있습니다 (현재: ${ticket.status})` });
+    }
+    const updated = await transitionTicket(ticket.id, "failed");
+    requestJobCancel(ticket.id);
+    broadcastToUi({
+      type: "log_line",
+      ticketId: updated.id,
+      line: "[강제 종료] 사용자가 세션을 중단했습니다.",
+      ts: new Date().toISOString(),
+    });
+    return updated;
   });
 
   app.post<{ Params: { id: string } }>("/api/tickets/:id/retry", async (req, reply) => {

@@ -312,6 +312,16 @@ export function requestTicketRevise(ticket: Ticket, message: string): void {
   socket.send(JSON.stringify(event));
 }
 
+// 사용자가 웹에서 실행 중인 티켓을 강제 종료할 때 쓴다. 티켓 상태는 라우트에서 이미 failed로
+// 바꿔뒀으니, 이건 그저 러너에게 "실제 프로세스도 멈춰라"를 알리는 정리 신호다 - 러너가 없거나
+// 이미 연결이 끊겨도(조용히 스킵) 티켓 자체는 failed로 남으니 사용자 입장에서는 종료된 게 맞다.
+export function requestJobCancel(ticketId: string): void {
+  const socket = [...runnerSockets][0];
+  if (!socket) return;
+  const event: ServerToRunnerEvent = { type: "job_cancel", ticketId };
+  socket.send(JSON.stringify(event));
+}
+
 // 웹 UI의 직원 추가 폼에서 "이 CLI 설치돼 있나요?" 확인할 때 쓴다. 러너가 없거나 5초 안에
 // 응답이 없으면 빈 상태로 반환한다 (UI는 "확인 불가"로 표시하면 된다).
 export async function requestDriverStatus(): Promise<Record<string, DriverStatus>> {
@@ -362,10 +372,18 @@ export async function requestCreateProject(
 }
 
 // 기획자/직원의 ask_employee MCP 툴 전용. 실제 조사는 호스트(러너)에서 그 프로젝트 폴더를 읽기
-// 전용으로 여는 임시 세션으로 진행되므로, 실제 코드를 읽는 시간을 감안해 넉넉히 대기한다.
+// 전용으로 여는 임시 세션으로 진행된다 - 매번 새 세션이라 프로젝트가 크거나 질문이 복잡하면
+// 수 분씩 걸릴 수 있다("얼마나 걸릴지 모르는 작업"). 예전엔 90초로 짧게 끊었는데, 그러면
+// 질문자가 타임아웃 에러를 받고 질문을 잘게 쪼개 재시도하는 동안 원래 조사 세션은 안 죽고
+// 계속 돌다가 뒤늦게 끝나도 갈 곳이 없어(요청이 이미 지워짐) 버려지기만 했다 - 시간도, 토큰도
+// 낭비. 그래서 20분으로 넉넉히 잡는다 - 러너가 죽거나 응답을 영영 안 보내는 극단적인 경우에만
+// 걸리는 안전망이지, 정상적인 조사 시간을 막는 용도가 아니다. claude 쪽 MCP 툴 호출 자체의
+// 클라이언트 타임아웃(MCP_TOOL_TIMEOUT)도 이 값과 맞춰서 headless.ts에서 같이 늘려뒀다 -
+// 안 맞추면 클라이언트가 먼저 포기해버려서 서버 쪽 타임아웃을 늘린 의미가 없어진다.
 // fromEmployeeName이 있으면(직원이 다른 직원에게 물어본 경우) 질문자/답변자 둘 다 org chart에
 // "상담 중"으로 표시되도록 시작/종료 시점에 브로드캐스트한다 - 없으면(기획 세션이 물어본 경우)
 // 답변자만 표시한다.
+const CONSULT_TIMEOUT_MS = 20 * 60 * 1000;
 export async function requestConsultEmployee(
   teamId: string,
   employeeName: string,
@@ -397,8 +415,8 @@ export async function requestConsultEmployee(
     };
     const timeout = setTimeout(() => {
       pendingConsultRequests.delete(requestId);
-      finish({ success: false, error: "90초 안에 응답이 없습니다." });
-    }, 90000);
+      finish({ success: false, error: "20분 안에 응답이 없습니다." });
+    }, CONSULT_TIMEOUT_MS);
     pendingConsultRequests.set(requestId, (result) => {
       clearTimeout(timeout);
       finish(result);

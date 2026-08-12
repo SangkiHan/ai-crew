@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { isQaEmployee, type PlanningDocStatus, type Ticket, type TicketStatus } from "@ai-crew/shared";
 import { useStore } from "./store.js";
-import { approveTicket, rejectTicket, retryTicket, reviseTicket } from "./lib/api.js";
+import { approveTicket, cancelTicket, rejectTicket, retryTicket, reviseTicket } from "./lib/api.js";
 
 const PLANNING_STATUS_LABEL: Record<PlanningDocStatus, string> = {
   drafting: "작성 중",
@@ -39,6 +39,10 @@ function ticketStatusLabel(status: TicketStatus, viewerIsQa: boolean): string {
   return STATUS_LABEL[status];
 }
 
+// 세션이 실제로 그 프로젝트 폴더에서 돌고 있는 상태 - 서버의 PROJECT_BUSY_STATUSES와 같은
+// 기준이다. 이 상태일 때만 "강제 종료"가 의미 있다(그 외엔 이미 세션이 끝난 상태라 죽일 게 없다).
+const BUSY_STATUSES: TicketStatus[] = ["assigned", "running", "qa_review"];
+
 function TicketRow({
   ticket,
   active,
@@ -50,20 +54,52 @@ function TicketRow({
   onClick: () => void;
   viewerIsQa: boolean;
 }) {
+  const [cancelling, setCancelling] = useState(false);
+  const canCancel = BUSY_STATUSES.includes(ticket.status);
+
+  async function handleCancel(e: MouseEvent) {
+    e.stopPropagation();
+    if (!confirm(`"${ticket.title}" 작업을 강제 종료할까요?\n지금까지 커밋된 내용은 남고, 진행 중이던 세션만 즉시 중단됩니다.`)) {
+      return;
+    }
+    setCancelling(true);
+    try {
+      await cancelTicket(ticket.id);
+    } finally {
+      setCancelling(false);
+    }
+  }
+
   return (
-    <button
+    // 취소 버튼이 안쪽에 있어 <button> 안에 <button>을 못 넣는다(무효한 HTML) - div + role="button"으로 바꾼다.
+    <div
       onClick={onClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => e.key === "Enter" && onClick()}
       className={[
-        "w-full rounded-lg border px-3 py-2 text-left text-sm transition-colors",
+        "w-full cursor-pointer rounded-lg border px-3 py-2 text-left text-sm transition-colors",
         active ? "border-sky-500 bg-sky-500/10" : "border-slate-700 bg-slate-800/60 hover:bg-slate-800",
       ].join(" ")}
     >
       <div className="flex items-center justify-between gap-2">
         <span className="truncate font-medium text-slate-200">{ticket.title}</span>
-        <span className="shrink-0 text-xs text-slate-400">{ticketStatusLabel(ticket.status, viewerIsQa)}</span>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <span className="text-xs text-slate-400">{ticketStatusLabel(ticket.status, viewerIsQa)}</span>
+          {canCancel && (
+            <button
+              onClick={handleCancel}
+              disabled={cancelling}
+              title="지금 도는 세션을 강제로 종료합니다"
+              className="rounded border border-rose-800/80 px-1.5 py-0.5 text-[11px] text-rose-400 hover:bg-rose-950 disabled:opacity-50"
+            >
+              {cancelling ? "종료 중..." : "강제 종료"}
+            </button>
+          )}
+        </div>
       </div>
       <div className="mt-0.5 text-xs text-slate-500">{ticket.project}</div>
-    </button>
+    </div>
   );
 }
 

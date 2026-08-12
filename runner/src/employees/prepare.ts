@@ -32,12 +32,14 @@ function isAlive(pid: number): boolean {
   }
 }
 
-// 러너가 재시작(개발 중 코드 수정에 의한 tsx watch 재시작, 또는 크래시 후 재기동)되면
-// recoverAndAssign이 "running" 티켓을 다시 밀어준다. 이전 러너가 띄운 CLI 프로세스는
-// 부모(러너)가 죽어도 자동으로 안 죽고 고아 프로세스로 계속 돌아가는 경우가 있어서, 확인 없이
-// 새 세션을 또 띄우면 같은 티켓에 여러 프로세스가 동시에 도는 사고가 난다 (실제로 겪음).
-// 새로 시작하기 전에 이전 프로세스가 살아있는지 확인하고 정리한다.
-async function killStaleDriverProcess(ticketId: string): Promise<void> {
+// 두 가지 용도로 쓴다: (1) 러너가 재시작(개발 중 코드 수정에 의한 tsx watch 재시작, 또는 크래시
+// 후 재기동)되면 recoverAndAssign이 "running" 티켓을 다시 밀어주는데, 이전 러너가 띄운 CLI
+// 프로세스는 부모(러너)가 죽어도 자동으로 안 죽고 고아 프로세스로 계속 돌아가는 경우가 있어서
+// 확인 없이 새 세션을 또 띄우면 같은 티켓에 여러 프로세스가 동시에 도는 사고가 난다(실제로 겪음) -
+// 새로 시작하기 전에 이전 프로세스가 살아있는지 확인하고 정리한다. (2) 사용자가 웹에서 실행 중인
+// 티켓을 강제 종료(job_cancel)할 때도 그대로 재사용한다 - "이전 프로세스를 찾아 죽인다"는 동작이
+// 완전히 같다.
+export async function killDriverProcess(ticketId: string): Promise<void> {
   try {
     const raw = await readFile(driverPidFile(ticketId), "utf-8");
     const pid = Number(raw.trim());
@@ -81,7 +83,7 @@ export async function prepareEmployeeJob(
   }
 
   const cwd = projectPath(ticket.project);
-  await killStaleDriverProcess(ticket.id);
+  await killDriverProcess(ticket.id);
 
   const [branch, baseSha] = await Promise.all([currentBranch(cwd), currentHeadSha(cwd)]);
   send({ type: "job_meta", ticketId: ticket.id, branch: branch ?? undefined, baseSha: baseSha ?? undefined });
@@ -110,7 +112,7 @@ export async function prepareQaJob(
   send: (event: RunnerToServerEvent) => void
 ): Promise<PreparedJob> {
   const cwd = projectPath(ticket.project);
-  await killStaleDriverProcess(ticket.id);
+  await killDriverProcess(ticket.id);
   send({
     type: "job_log",
     ticketId: ticket.id,
