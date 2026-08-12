@@ -8,7 +8,15 @@ import spawn from "cross-spawn";
 import { envWithAgyPath } from "../antigravity-path.js";
 import { runClaudeHeadless } from "../claude/headless.js";
 import { summarizeCodexEvent } from "../drivers/codex.js";
+import { clearDriverPid, writeDriverPid } from "../employees/prepare.js";
 import { readSessionId, writeSessionId } from "./session.js";
+
+// 웹 UI의 "팀장 강제 종료" 버튼용 pid 추적. 티켓의 pid 추적(writeDriverPid/killDriverProcess,
+// employees/prepare.ts)과 완전히 같은 함수를 재사용한다 - 키가 ticketId냐 teamId냐만 다를 뿐
+// "pid 파일에 적어두고 필요하면 죽인다"는 동작 자체는 같다.
+export function managerPidKey(teamId: string): string {
+  return `manager:${teamId}`;
+}
 
 const execFileAsync = promisify(execFile);
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -53,7 +61,9 @@ export async function runManagerClaude(
     resumeSessionId: previousSessionId ?? undefined,
     mcpConfigJson,
     onEvent,
+    onSpawn: (pid) => writeDriverPid(managerPidKey(teamId), pid),
   });
+  await clearDriverPid(managerPidKey(teamId));
   if (result.sessionId) await writeSessionId(teamId, result.sessionId);
   return result;
 }
@@ -105,6 +115,7 @@ export async function runManagerAntigravity(
   let stdoutTail = "";
   const success = await new Promise<boolean>((resolve) => {
     const child = spawn("agy", args, { cwd: MANAGER_CWD, env: envWithAgyPath() });
+    writeDriverPid(managerPidKey(teamId), child.pid).catch(() => {});
     let buffer = "";
     let stderr = "";
 
@@ -137,6 +148,7 @@ export async function runManagerAntigravity(
     });
   });
 
+  await clearDriverPid(managerPidKey(teamId));
   // antigravity는 대화 이어가기를 지원하지 않으므로 저장할 세션 id가 없다 - 항상 빈 문자열.
   return { sessionId: "", resultText: stdoutTail.trim(), success };
 }
@@ -183,6 +195,7 @@ export async function runManagerCodex(
   let lastAgentMessage = "";
   const success = await new Promise<boolean>((resolve) => {
     const child = spawn("codex", args, { cwd: MANAGER_CWD, stdio: ["ignore", "pipe", "pipe"] });
+    writeDriverPid(managerPidKey(teamId), child.pid).catch(() => {});
 
     let buffer = "";
     let stderr = "";
@@ -247,6 +260,7 @@ export async function runManagerCodex(
     });
   });
 
+  await clearDriverPid(managerPidKey(teamId));
   // codex도 대화 이어가기를 지원하지 않는다 - 매번 새 세션.
   return { sessionId: "", resultText: success ? lastAgentMessage.trim() : failureText.trim(), success };
 }

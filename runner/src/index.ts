@@ -13,6 +13,7 @@ import {
 } from "@ai-crew/shared";
 import { fetchEmployees } from "./employees/api.js";
 import { killDriverProcess } from "./employees/prepare.js";
+import { managerPidKey } from "./manager/drivers.js";
 import { runClaudeDriver, runClaudeQaReview, runClaudeReviseDriver } from "./drivers/claude.js";
 import { runAntigravityDriver } from "./drivers/antigravity.js";
 import { envWithAgyPath } from "./antigravity-path.js";
@@ -300,6 +301,14 @@ async function handleLaunchInfraBrowser(requestId: string) {
   send({ type: "launch_infra_browser_result", requestId, success: result.success, error: result.error });
 }
 
+// 웹 UI의 "팀장 강제 종료" 버튼이 부른다 - 티켓 강제 종료와 완전히 같은 pid 추적/종료 로직을
+// 재사용한다(manager/drivers.ts의 managerPidKey 참고).
+function handleCancelManager(teamId: string) {
+  killDriverProcess(managerPidKey(teamId)).catch((err) =>
+    console.error(`[runner] cancel_manager_request 처리 실패 (team ${teamId})`, err)
+  );
+}
+
 function drain() {
   while (active < MAX_CONCURRENT && queue.length > 0) {
     const item = queue.shift()!;
@@ -420,6 +429,8 @@ function connect() {
       handleEndSessionRequest(event);
     } else if (event.type === "job_cancel") {
       handleJobCancel(event.ticketId);
+    } else if (event.type === "cancel_manager_request") {
+      handleCancelManager(event.teamId);
     }
   });
 

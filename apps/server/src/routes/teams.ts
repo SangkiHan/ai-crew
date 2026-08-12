@@ -10,6 +10,7 @@ import {
   updateTeamProjects,
 } from "../teams/store.js";
 import { pruneEmployeeProjects } from "../employees/store.js";
+import { cancelManager } from "../ws/runner.js";
 
 // 팀장이 직접 코드를 고치지 않고(delegate-only) 세션이 끝나면 사라지므로 mock 드라이버를
 // 골라줄 이유가 없다 - 직원 드라이버 검증(routes/employees.ts VALID_DRIVERS)과 같은 값 집합.
@@ -84,6 +85,14 @@ export function registerTeamRoutes(app: FastifyInstance) {
       return reply.code(409).send({ error: "최소 1개의 팀은 남아있어야 합니다." });
     }
     await deleteTeam(req.params.id);
+    return { ok: true };
+  });
+
+  // 직원 강제 종료(/api/tickets/:id/cancel)와 짝을 이루는 팀장용 버튼. 팀장은 티켓이 아니라
+  // 팀 단위로 busy 상태를 관리하므로 teamId로 취소한다.
+  app.post<{ Params: { id: string } }>("/api/teams/:id/cancel-manager", async (req, reply) => {
+    const result = cancelManager(req.params.id);
+    if (!result.ok) return reply.code(400).send({ error: result.error });
     return { ok: true };
   });
 }

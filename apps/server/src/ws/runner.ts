@@ -329,6 +329,29 @@ export function requestJobCancel(ticketId: string): void {
   socket.send(JSON.stringify(event));
 }
 
+// 웹 UI의 "팀장 강제 종료" 버튼이 쓴다. 티켓 강제 종료와 같은 방식 - 상태(busyTeams)는
+// 러너 응답을 기다리지 않고 여기서 바로 정리한다(러너가 없거나 응답이 없어도 사용자 입장에서는
+// "이미 끝난 일"이어야 한다). manager_result와 같은 모양으로 브로드캐스트해서, 채팅창에
+// 새로 만들 UI 없이 그대로 메시지가 얹힌다.
+export function cancelManager(teamId: string): { ok: boolean; error?: string } {
+  if (!busyTeams.has(teamId)) {
+    return { ok: false, error: "지금 실행 중인 팀장 작업이 없습니다." };
+  }
+  busyTeams.delete(teamId);
+
+  const socket = [...runnerSockets][0];
+  if (socket) {
+    const event: ServerToRunnerEvent = { type: "cancel_manager_request", teamId };
+    socket.send(JSON.stringify(event));
+  }
+
+  const resultText = "[강제 종료] 사용자가 팀장 작업을 중단했습니다.";
+  saveChatMessage(teamId, "manager", resultText).catch(() => {});
+  broadcastToUi({ type: "manager_result", teamId, requestId: crypto.randomUUID(), resultText, success: false });
+  broadcastToUi({ type: "manager_status", teamId, status: "idle" });
+  return { ok: true };
+}
+
 // 웹 UI의 직원 추가 폼에서 "이 CLI 설치돼 있나요?" 확인할 때 쓴다. 러너가 없거나 5초 안에
 // 응답이 없으면 빈 상태로 반환한다 (UI는 "확인 불가"로 표시하면 된다).
 export async function requestDriverStatus(): Promise<Record<string, DriverStatus>> {

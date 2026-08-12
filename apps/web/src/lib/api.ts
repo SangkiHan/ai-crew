@@ -26,6 +26,10 @@ export function deleteTeam(id: string): Promise<{ ok: true }> {
   return fetch(`/api/teams/${id}`, { method: "DELETE" }).then((res) => json<{ ok: true }>(res));
 }
 
+export function cancelManager(teamId: string): Promise<{ ok: true }> {
+  return fetch(`/api/teams/${teamId}/cancel-manager`, { method: "POST" }).then((res) => json<{ ok: true }>(res));
+}
+
 export function updateTeamProjects(id: string, projects: string[]): Promise<Team> {
   return fetch(`/api/teams/${id}/projects`, {
     method: "PUT",

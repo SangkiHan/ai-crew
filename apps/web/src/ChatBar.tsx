@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { launchInfraBrowser } from "./lib/api.js";
+import { cancelManager, launchInfraBrowser } from "./lib/api.js";
 import { Markdown } from "./Markdown.js";
 import { useStore, type ChatMessage } from "./store.js";
 
@@ -26,6 +26,7 @@ export function ChatBar({
   const [planningMode, setPlanningMode] = useState(false);
   const [endingSession, setEndingSession] = useState(false);
   const [launchingBrowser, setLaunchingBrowser] = useState(false);
+  const [cancellingManager, setCancellingManager] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
 
   // 새로고침/재접속해도 대화가 이어져 보이도록, 팀이 바뀌거나 처음 뜰 때 서버에 저장된
@@ -65,6 +66,23 @@ export function ChatBar({
       alert(err instanceof Error ? err.message : String(err));
     } finally {
       setLaunchingBrowser(false);
+    }
+  }
+
+  // 직원 티켓의 "강제 종료"(DetailPanel.tsx)와 짝을 이루는 팀장용 버튼. 서버가 즉시 busy 상태를
+  // 정리하고 채팅에 취소 메시지를 남기므로, 여기서는 호출만 하면 managerStatus가 idle로
+  // 바뀌면서(manager_status 브로드캐스트) 이 버튼도 자동으로 다시 숨겨진다.
+  async function handleCancelManager() {
+    if (!confirm("팀장 작업을 강제 종료할까요? 지금까지 진행된 내용은 남고, 응답 생성만 즉시 중단됩니다.")) {
+      return;
+    }
+    setCancellingManager(true);
+    try {
+      await cancelManager(teamId);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCancellingManager(false);
     }
   }
 
@@ -110,6 +128,16 @@ export function ChatBar({
           <button onClick={onOpenPlanningDocs} className="text-xs text-slate-500 hover:text-slate-300">
             기획서 목록
           </button>
+          {managerStatus === "busy" && (
+            <button
+              onClick={handleCancelManager}
+              disabled={cancellingManager}
+              title="지금 응답을 생성 중인 팀장 세션을 강제로 종료합니다"
+              className="text-xs text-rose-400 hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {cancellingManager ? "종료 중..." : "팀장 강제 종료"}
+            </button>
+          )}
           <button
             onClick={handleEndSession}
             disabled={endingSession || managerStatus === "busy"}
