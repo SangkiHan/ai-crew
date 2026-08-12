@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { OrgChart } from "./OrgChart.js";
 import { DetailPanel } from "./DetailPanel.js";
 import { ChatBar } from "./ChatBar.js";
@@ -10,6 +10,64 @@ import { TeamSwitcher } from "./TeamSwitcher.js";
 import { useStore } from "./store.js";
 import { useUiSocket } from "./lib/ws.js";
 import { fetchAgents, fetchEmployees, fetchPlanningDocs, fetchTeams, fetchTickets } from "./lib/api.js";
+
+const PANEL_MIN_WIDTH = 240;
+const PANEL_MAX_WIDTH = 720;
+const PANEL_DEFAULT_WIDTH = 384; // 기존 w-96(24rem)과 같은 값 - 처음 쓰는 사람에게는 그대로 보인다.
+
+function clampPanelWidth(width: number): number {
+  return Math.min(PANEL_MAX_WIDTH, Math.max(PANEL_MIN_WIDTH, width));
+}
+
+function loadPanelWidth(storageKey: string): number {
+  const raw = localStorage.getItem(storageKey);
+  const parsed = raw ? Number(raw) : NaN;
+  return Number.isFinite(parsed) ? clampPanelWidth(parsed) : PANEL_DEFAULT_WIDTH;
+}
+
+// 왼쪽(팀장 대화)/오른쪽(상세 정보) 패널의 폭을 드래그로 조절한다. direction은 핸들을 오른쪽으로
+// 끌 때 그 패널이 넓어져야 하는지(왼쪽 패널: +1) 좁아져야 하는지(오른쪽 패널: -1)를 정한다.
+// localStorage에 저장해 새로고침해도 사용자가 맞춘 폭이 유지된다.
+function useResizablePanelWidth(storageKey: string, direction: 1 | -1) {
+  const [width, setWidth] = useState(() => loadPanelWidth(storageKey));
+  const widthRef = useRef(width);
+  widthRef.current = width;
+
+  function startDrag(e: ReactPointerEvent) {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = widthRef.current;
+    // 드래그 중 텍스트가 선택되면 거슬리므로 끄고, 커서도 리사이즈 모양으로 고정한다.
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+
+    function handleMove(moveEvent: PointerEvent) {
+      const next = clampPanelWidth(startWidth + direction * (moveEvent.clientX - startX));
+      widthRef.current = next;
+      setWidth(next);
+    }
+    function handleUp() {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      localStorage.setItem(storageKey, String(widthRef.current));
+    }
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+  }
+
+  return [width, startDrag] as const;
+}
+
+function ResizeHandle({ onPointerDown }: { onPointerDown: (e: ReactPointerEvent) => void }) {
+  return (
+    <div
+      onPointerDown={onPointerDown}
+      className="w-1 shrink-0 cursor-col-resize bg-slate-800 transition-colors hover:bg-sky-600 active:bg-sky-500"
+    />
+  );
+}
 
 export function App() {
   const setAgents = useStore((s) => s.setAgents);
@@ -23,6 +81,8 @@ export function App() {
   const [managingProjects, setManagingProjects] = useState(false);
   const [showPlanningDocs, setShowPlanningDocs] = useState(false);
   const [showPastSessions, setShowPastSessions] = useState(false);
+  const [leftWidth, startLeftDrag] = useResizablePanelWidth("ai-crew:panelWidth:left", 1);
+  const [rightWidth, startRightDrag] = useResizablePanelWidth("ai-crew:panelWidth:right", -1);
 
   useUiSocket();
 
@@ -74,7 +134,7 @@ export function App() {
         </div>
       </header>
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <aside className="w-96 shrink-0 border-r border-slate-800">
+        <aside className="shrink-0 overflow-hidden" style={{ width: leftWidth }}>
           {selectedTeamId && (
             <ChatBar
               teamId={selectedTeamId}
@@ -83,10 +143,12 @@ export function App() {
             />
           )}
         </aside>
+        <ResizeHandle onPointerDown={startLeftDrag} />
         <main className="min-w-0 flex-1">
           <OrgChart />
         </main>
-        <aside className="w-96 shrink-0 overflow-y-auto border-l border-slate-800">
+        <ResizeHandle onPointerDown={startRightDrag} />
+        <aside className="shrink-0 overflow-y-auto" style={{ width: rightWidth }}>
           <DetailPanel />
         </aside>
       </div>
