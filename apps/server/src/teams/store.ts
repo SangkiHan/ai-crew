@@ -55,8 +55,19 @@ export async function updateTeamManagerConfig(
   return toTeam(row);
 }
 
+// 직원이 남아있으면 라우트(routes/teams.ts)가 미리 409로 막아주지만, 채팅 세션/메시지·팀
+// 기억(MemoryEntry)·기획서·티켓은 그런 가드가 없어 team.delete()가 FK 제약 위반으로 그대로
+// 실패했다(P2003). 이 4개는 사람이 직접 관리하는 설정이 아니라 팀이 만들어낸 이력이므로,
+// 팀을 지울 때 같이 정리한다 - 순서는 ChatMessage가 ChatSession을 참조하므로 그보다 먼저.
 export async function deleteTeam(id: string): Promise<void> {
-  await prisma.team.delete({ where: { id } });
+  await prisma.$transaction([
+    prisma.chatMessage.deleteMany({ where: { teamId: id } }),
+    prisma.chatSession.deleteMany({ where: { teamId: id } }),
+    prisma.memoryEntry.deleteMany({ where: { teamId: id } }),
+    prisma.planningDoc.deleteMany({ where: { teamId: id } }),
+    prisma.ticket.deleteMany({ where: { teamId: id } }),
+    prisma.team.delete({ where: { id } }),
+  ]);
 }
 
 export async function countEmployeesInTeam(id: string): Promise<number> {
