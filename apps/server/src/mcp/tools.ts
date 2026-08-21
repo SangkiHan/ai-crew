@@ -169,6 +169,12 @@ export function consultEmployee(
   });
 }
 
+// 팀장/직원의 query_db MCP 툴 전용 - 팀 설정에 등록된 dev/prod DB를 SELECT로만 조회한다
+// (그 외 구문은 서버가 거부한다, apps/server/src/db-query/run.ts).
+export function queryDb(teamId: string, env: "dev" | "prod", sql: string) {
+  return api(`/api/teams/${teamId}/db-query`, { method: "POST", body: JSON.stringify({ env, sql }) });
+}
+
 export async function askUser(question: string) {
   const created = await api<{ id: string }>("/api/questions", {
     method: "POST",

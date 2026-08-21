@@ -2,7 +2,7 @@ import { useState } from "react";
 import { DRIVER_MODEL_OPTIONS, type Driver } from "@ai-crew/shared";
 import { useStore } from "./store.js";
 import { DRIVER_OPTIONS } from "./EmployeeManager.js";
-import { updateTeamManagerConfig, updateTeamProjects } from "./lib/api.js";
+import { updateTeamDbConfig, updateTeamManagerConfig, updateTeamProjects, type TeamDbConfig } from "./lib/api.js";
 
 // claude만 대화 이어가기(--resume)를 지원한다 - 다른 CLI로 바꾸면 팀장이 직전 대화를 기억하지
 // 못한 채 매번 새 세션으로 시작한다(runner/src/manager/drivers.ts에 문서화된 한계). 드라이버
@@ -28,6 +28,15 @@ export function TeamProjectsManager({ teamId, onClose }: { teamId: string; onClo
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [modelSubmitting, setModelSubmitting] = useState(false);
+  const [dbConfig, setDbConfig] = useState({
+    devDbUrl: team?.devDbUrl ?? "",
+    devDbUser: team?.devDbUser ?? "",
+    devDbPassword: team?.devDbPassword ?? "",
+    prodDbUrl: team?.prodDbUrl ?? "",
+    prodDbUser: team?.prodDbUser ?? "",
+    prodDbPassword: team?.prodDbPassword ?? "",
+  });
+  const [dbConfigSubmitting, setDbConfigSubmitting] = useState(false);
 
   async function save(nextProjects: string[]) {
     setSubmitting(true);
@@ -77,6 +86,27 @@ export function TeamProjectsManager({ teamId, onClose }: { teamId: string; onClo
   async function handleRemove(project: string) {
     if (!team) return;
     await save(team.projects.filter((p) => p !== project));
+  }
+
+  async function handleSaveDbConfig() {
+    setDbConfigSubmitting(true);
+    setError(null);
+    try {
+      const config: TeamDbConfig = {
+        devDbUrl: dbConfig.devDbUrl.trim() || null,
+        devDbUser: dbConfig.devDbUser.trim() || null,
+        devDbPassword: dbConfig.devDbPassword || null,
+        prodDbUrl: dbConfig.prodDbUrl.trim() || null,
+        prodDbUser: dbConfig.prodDbUser.trim() || null,
+        prodDbPassword: dbConfig.prodDbPassword || null,
+      };
+      const updated = await updateTeamDbConfig(teamId, config);
+      setTeams(teams.map((t) => (t.id === teamId ? updated : t)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDbConfigSubmitting(false);
+    }
   }
 
   return (
@@ -199,7 +229,92 @@ export function TeamProjectsManager({ teamId, onClose }: { teamId: string; onClo
               추가
             </button>
           </div>
+          <h3 className="mb-2 mt-6 text-sm font-semibold text-slate-200">DB 조회 연결</h3>
+          <p className="mb-3 text-xs text-slate-500">
+            DB 조회 기능(상단 "DB 조회" 버튼)과 팀장/직원의 query_db 툴이 사용할 연결 정보입니다.
+            URL에는 자격증명 없이
+            <code className="mx-1 rounded bg-slate-800 px-1 py-0.5 text-[11px]">postgresql://host:5432/db</code>
+            또는
+            <code className="mx-1 rounded bg-slate-800 px-1 py-0.5 text-[11px]">mysql://host:3306/db</code>
+            형식으로 입력하고, 아이디/비밀번호는 따로 입력하세요. application.yml의
+            spring.datasource.url을 그대로 붙여넣어도 됩니다 (
+            <code className="mx-1 rounded bg-slate-800 px-1 py-0.5 text-[11px]">jdbc:</code>
+            접두사와 뒤에 붙는 쿼리 파라미터를 그대로 인식합니다). SELECT 조회만 가능합니다 - 그 외
+            구문은 서버가 거부합니다.
+          </p>
+          <div className="mb-4 flex flex-col gap-4">
+            <DbConnectionFields
+              label="개발 DB"
+              urlPlaceholder="postgresql://host:5432/db"
+              url={dbConfig.devDbUrl}
+              user={dbConfig.devDbUser}
+              password={dbConfig.devDbPassword}
+              onChange={(field, value) => setDbConfig((c) => ({ ...c, [`dev${field}`]: value }))}
+            />
+            <DbConnectionFields
+              label="운영 DB"
+              urlPlaceholder="mysql://host:3306/db"
+              url={dbConfig.prodDbUrl}
+              user={dbConfig.prodDbUser}
+              password={dbConfig.prodDbPassword}
+              onChange={(field, value) => setDbConfig((c) => ({ ...c, [`prod${field}`]: value }))}
+            />
+          </div>
+          <button
+            onClick={handleSaveDbConfig}
+            disabled={dbConfigSubmitting}
+            className="rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50"
+          >
+            DB 연결 저장
+          </button>
+
           {error && <p className="mt-2 text-xs text-rose-400">{error}</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// dev/운영 DB 각각 URL(자격증명 없이)/아이디/비밀번호 3칸을 같은 모양으로 보여준다.
+function DbConnectionFields({
+  label,
+  urlPlaceholder,
+  url,
+  user,
+  password,
+  onChange,
+}: {
+  label: string;
+  urlPlaceholder: string;
+  url: string;
+  user: string;
+  password: string;
+  onChange: (field: "DbUrl" | "DbUser" | "DbPassword", value: string) => void;
+}) {
+  return (
+    <div>
+      <p className="mb-1.5 text-xs font-medium text-slate-300">{label}</p>
+      <div className="flex flex-col gap-1.5">
+        <input
+          value={url}
+          onChange={(e) => onChange("DbUrl", e.target.value)}
+          placeholder={urlPlaceholder}
+          className="rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500"
+        />
+        <div className="flex gap-1.5">
+          <input
+            value={user}
+            onChange={(e) => onChange("DbUser", e.target.value)}
+            placeholder="아이디"
+            className="w-1/2 rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500"
+          />
+          <input
+            value={password}
+            onChange={(e) => onChange("DbPassword", e.target.value)}
+            type="password"
+            placeholder="비밀번호"
+            className="w-1/2 rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500"
+          />
         </div>
       </div>
     </div>

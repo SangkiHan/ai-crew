@@ -50,6 +50,7 @@ const EMPLOYEE_TOOL_NAMES = [
   "ask_peer",
   "ask_employee",
   "answer_peer_message",
+  "query_db",
 ].map((tool) => `mcp__${EMPLOYEE_MCP_SERVER_NAME}__${tool}`);
 
 const QA_MCP_SERVER_NAME = "ai-crew-qa-tools";

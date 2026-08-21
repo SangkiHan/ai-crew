@@ -1,4 +1,14 @@
-import type { AgentConfig, Driver, DriverStatus, Employee, PlanningDoc, Team, Ticket } from "@ai-crew/shared";
+import type {
+  AgentConfig,
+  DbEnv,
+  DbQueryResult,
+  Driver,
+  DriverStatus,
+  Employee,
+  PlanningDoc,
+  Team,
+  Ticket,
+} from "@ai-crew/shared";
 
 async function json<T>(res: Response): Promise<T> {
   const data = await res.json();
@@ -45,6 +55,31 @@ export function updateTeamManagerConfig(id: string, driver: Driver | undefined, 
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ driver, model }),
   }).then((res) => json<Team>(res));
+}
+
+export interface TeamDbConfig {
+  devDbUrl: string | null;
+  devDbUser: string | null;
+  devDbPassword: string | null;
+  prodDbUrl: string | null;
+  prodDbUser: string | null;
+  prodDbPassword: string | null;
+}
+
+export function updateTeamDbConfig(id: string, config: TeamDbConfig): Promise<Team> {
+  return fetch(`/api/teams/${id}/db-config`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(config),
+  }).then((res) => json<Team>(res));
+}
+
+export function queryTeamDb(id: string, env: DbEnv, sql: string): Promise<DbQueryResult> {
+  return fetch(`/api/teams/${id}/db-query`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ env, sql }),
+  }).then((res) => json<DbQueryResult>(res));
 }
 
 export function fetchTickets(): Promise<Ticket[]> {

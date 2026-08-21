@@ -6,6 +6,7 @@ import { EmployeeManager } from "./EmployeeManager.js";
 import { PlanningDocPanel } from "./PlanningDocPanel.js";
 import { ChatSessionsPanel } from "./ChatSessionsPanel.js";
 import { TeamProjectsManager } from "./TeamProjectsManager.js";
+import { DbQueryPanel } from "./DbQueryPanel.js";
 import { TeamSwitcher } from "./TeamSwitcher.js";
 import { useStore } from "./store.js";
 import { useUiSocket } from "./lib/ws.js";
@@ -81,6 +82,7 @@ export function App() {
   const [managingProjects, setManagingProjects] = useState(false);
   const [showPlanningDocs, setShowPlanningDocs] = useState(false);
   const [showPastSessions, setShowPastSessions] = useState(false);
+  const [showDbQuery, setShowDbQuery] = useState(false);
   const [leftWidth, startLeftDrag] = useResizablePanelWidth("ai-crew:panelWidth:left", 1);
   const [rightWidth, startRightDrag] = useResizablePanelWidth("ai-crew:panelWidth:right", -1);
 
@@ -131,6 +133,13 @@ export function App() {
           >
             직원 관리
           </button>
+          <button
+            onClick={() => setShowDbQuery(true)}
+            disabled={!selectedTeamId}
+            className="rounded-md border border-slate-700 px-3 py-1 text-xs text-slate-300 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            DB 조회
+          </button>
         </div>
       </header>
       <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -163,6 +172,9 @@ export function App() {
       )}
       {showPastSessions && selectedTeamId && (
         <ChatSessionsPanel teamId={selectedTeamId} onClose={() => setShowPastSessions(false)} />
+      )}
+      {showDbQuery && selectedTeamId && (
+        <DbQueryPanel teamId={selectedTeamId} onClose={() => setShowDbQuery(false)} />
       )}
     </div>
   );

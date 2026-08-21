@@ -11,6 +11,7 @@ import {
   listEmployees,
   listProjects,
   listTickets,
+  queryDb,
   reviseTicket,
   scheduleTicketRetry,
   searchHistory,
@@ -205,6 +206,22 @@ server.tool(
   async ({ query, limit }) => {
     const results = await searchHistory(TEAM_ID!, query, limit);
     return { content: [{ type: "text" as const, text: JSON.stringify(results, null, 2) }] };
+  }
+);
+
+server.tool(
+  "query_db",
+  "팀 설정에 등록된 dev/prod DB에 SELECT 쿼리를 실행해 실제 데이터를 확인합니다. SELECT(및 " +
+    "WITH ... SELECT) 외의 구문(INSERT/UPDATE/DELETE/ALTER/CREATE 등)은 서버가 거부합니다 - " +
+    "조회 전용입니다. prod는 실제 서비스 데이터이므로 신중하게 조회하고, 결과가 많을 수 있는 " +
+    "쿼리는 WHERE/LIMIT을 직접 붙이세요.",
+  {
+    env: z.enum(["dev", "prod"]).describe("조회할 DB (팀 설정에 등록되어 있어야 함)"),
+    sql: z.string().describe("실행할 SELECT 쿼리 (세미콜론으로 여러 statement를 이어 쓸 수 없음)"),
+  },
+  async ({ env, sql }) => {
+    const result = await queryDb(TEAM_ID!, env, sql);
+    return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
   }
 );
 

@@ -1,16 +1,18 @@
 import type { FastifyInstance } from "fastify";
-import { isKnownDriverModel, type Driver } from "@ai-crew/shared";
+import { isKnownDriverModel, type DbEnv, type Driver } from "@ai-crew/shared";
 import {
   countEmployeesInTeam,
   createTeam,
   deleteTeam,
   getTeam,
   listTeams,
+  updateTeamDbConfig,
   updateTeamManagerConfig,
   updateTeamProjects,
 } from "../teams/store.js";
 import { pruneEmployeeProjects } from "../employees/store.js";
 import { cancelManager } from "../ws/runner.js";
+import { buildConnectionString, runReadOnlyQuery } from "../db-query/run.js";
 
 // 팀장이 직접 코드를 고치지 않고(delegate-only) 세션이 끝나면 사라지므로 mock 드라이버를
 // 골라줄 이유가 없다 - 직원 드라이버 검증(routes/employees.ts VALID_DRIVERS)과 같은 값 집합.
@@ -68,6 +70,60 @@ export function registerTeamRoutes(app: FastifyInstance) {
         return reply.code(400).send({ error: `"${driver}"에서 알 수 없는 모델입니다: ${model}` });
       }
       return updateTeamManagerConfig(req.params.id, driver, model);
+    }
+  );
+
+  // 팀 설정 > DB 조회에서 쓰는 dev/prod DB 연결 정보를 저장한다. url은 자격증명 없이 호스트/포트/
+  // db명만 담고 username/password는 따로 받는다(웹 UI가 3칸으로 나눠 입력). 값 검증은 최소한만
+  // 한다 - 실제 유효성은 조회 시도 시점에 연결이 되는지로 드러난다.
+  app.put<{
+    Params: { id: string };
+    Body: {
+      devDbUrl?: string | null;
+      devDbUser?: string | null;
+      devDbPassword?: string | null;
+      prodDbUrl?: string | null;
+      prodDbUser?: string | null;
+      prodDbPassword?: string | null;
+    };
+  }>("/api/teams/:id/db-config", async (req, reply) => {
+    const existing = await getTeam(req.params.id);
+    if (!existing) return reply.code(404).send({ error: "not found" });
+    return updateTeamDbConfig(req.params.id, {
+      devDbUrl: req.body.devDbUrl?.trim() || null,
+      devDbUser: req.body.devDbUser?.trim() || null,
+      devDbPassword: req.body.devDbPassword || null,
+      prodDbUrl: req.body.prodDbUrl?.trim() || null,
+      prodDbUser: req.body.prodDbUser?.trim() || null,
+      prodDbPassword: req.body.prodDbPassword || null,
+    });
+  });
+
+  // SELECT 조회 전용 (apps/server/src/db-query/run.ts가 그 외 구문을 거부한다). 팀 설정에서
+  // 등록한 dev/prod 연결 정보(url+username+password) 중 하나를 골라 합친 뒤 실행한다 - 웹 UI와
+  // 팀장/직원 MCP 툴이 공유한다.
+  app.post<{ Params: { id: string }; Body: { env: DbEnv; sql: string } }>(
+    "/api/teams/:id/db-query",
+    async (req, reply) => {
+      const existing = await getTeam(req.params.id);
+      if (!existing) return reply.code(404).send({ error: "not found" });
+      const { env, sql } = req.body;
+      if (env !== "dev" && env !== "prod") {
+        return reply.code(400).send({ error: 'env는 "dev" 또는 "prod"여야 합니다' });
+      }
+      const baseUrl = env === "dev" ? existing.devDbUrl : existing.prodDbUrl;
+      const user = env === "dev" ? existing.devDbUser : existing.prodDbUser;
+      const password = env === "dev" ? existing.devDbPassword : existing.prodDbPassword;
+      if (!baseUrl) {
+        return reply.code(400).send({ error: `이 팀에 ${env} DB가 설정되어 있지 않습니다 (팀 설정에서 등록하세요)` });
+      }
+      if (!sql?.trim()) return reply.code(400).send({ error: "sql is required" });
+      try {
+        const dbUrl = buildConnectionString(baseUrl, user, password);
+        return await runReadOnlyQuery(dbUrl, sql);
+      } catch (err) {
+        return reply.code(400).send({ error: err instanceof Error ? err.message : String(err) });
+      }
     }
   );
 

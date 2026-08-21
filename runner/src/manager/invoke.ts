@@ -31,6 +31,7 @@ const MCP_TOOL_NAMES = [
   "ask_user",
   "schedule_ticket_retry",
   "revise_ticket",
+  "query_db",
 ].map((tool) => `mcp__${MCP_SERVER_NAME}__${tool}`);
 
 // INFRA_BROWSER_ENABLED/INFRA_BROWSER_CDP_ENDPOINT는 ../infra-browser.js에 정의돼 있다 -

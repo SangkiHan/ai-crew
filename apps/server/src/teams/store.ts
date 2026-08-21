@@ -11,6 +11,12 @@ function toTeam(row: {
   projects: string[];
   managerModel: string | null;
   managerDriver: string;
+  devDbUrl: string | null;
+  devDbUser: string | null;
+  devDbPassword: string | null;
+  prodDbUrl: string | null;
+  prodDbUser: string | null;
+  prodDbPassword: string | null;
 }): Team {
   return {
     id: row.id,
@@ -20,6 +26,12 @@ function toTeam(row: {
     projects: row.projects,
     managerModel: row.managerModel,
     managerDriver: row.managerDriver as Driver,
+    devDbUrl: row.devDbUrl,
+    devDbUser: row.devDbUser,
+    devDbPassword: row.devDbPassword,
+    prodDbUrl: row.prodDbUrl,
+    prodDbUser: row.prodDbUser,
+    prodDbPassword: row.prodDbPassword,
   };
 }
 
@@ -68,6 +80,33 @@ export async function deleteTeam(id: string): Promise<void> {
     prisma.ticket.deleteMany({ where: { teamId: id } }),
     prisma.team.delete({ where: { id } }),
   ]);
+}
+
+// 빈 문자열은 "설정 해제"로 취급해 null로 저장한다 - 웹 UI가 입력칸을 비우고 저장을 누르는 방식
+// 그대로 처리하기 위해서다.
+export async function updateTeamDbConfig(
+  id: string,
+  config: {
+    devDbUrl: string | null;
+    devDbUser: string | null;
+    devDbPassword: string | null;
+    prodDbUrl: string | null;
+    prodDbUser: string | null;
+    prodDbPassword: string | null;
+  }
+): Promise<Team> {
+  const row = await prisma.team.update({
+    where: { id },
+    data: {
+      devDbUrl: config.devDbUrl || null,
+      devDbUser: config.devDbUser || null,
+      devDbPassword: config.devDbPassword || null,
+      prodDbUrl: config.prodDbUrl || null,
+      prodDbUser: config.prodDbUser || null,
+      prodDbPassword: config.prodDbPassword || null,
+    },
+  });
+  return toTeam(row);
 }
 
 export async function countEmployeesInTeam(id: string): Promise<number> {
