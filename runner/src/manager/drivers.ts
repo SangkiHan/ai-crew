@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import spawn from "cross-spawn";
+import { DRIVER_MODEL_OPTIONS } from "@ai-crew/shared";
 import { envWithAgyPath } from "../antigravity-path.js";
 import { runClaudeHeadless } from "../claude/headless.js";
 import { summarizeCodexEvent } from "../drivers/codex.js";
@@ -176,7 +177,9 @@ export async function runManagerCodex(
     "read-only",
     "--skip-git-repo-check",
     "--ephemeral",
-    ...(model ? ["-m", model] : []),
+    // employee 드라이버와 동일하게, 로컬 ~/.codex/config.toml의 기본 모델에 의존하지 않는다.
+    "-m",
+    model ?? DRIVER_MODEL_OPTIONS.codex[0].value,
     "-c",
     `${prefix}.command="node"`,
     "-c",

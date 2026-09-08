@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import spawn from "cross-spawn";
-import type { Employee, RunnerToServerEvent, Ticket } from "@ai-crew/shared";
+import { DRIVER_MODEL_OPTIONS, type Employee, type RunnerToServerEvent, type Ticket } from "@ai-crew/shared";
 import {
   clearDriverPid,
   prepareEmployeeJob,
@@ -90,7 +90,10 @@ export async function runCodexDriver(
     // 직원 실행은 Codex의 전역 세션/SQLite 상태를 공유할 필요가 없다. 다른 Codex 세션이
     // 실행 중이어도 전역 잠금 때문에 headless 작업이 시작 단계에서 멈추지 않도록 한다.
     "--ephemeral",
-    ...(employee.model ? ["-m", employee.model] : []),
+    // 로컬 머신의 ~/.codex/config.toml 기본 모델에 의존하지 않는다 - 그 값이 계정 종류(API
+    // 키 vs ChatGPT)와 안 맞으면 조용히 실패한다. employee.model이 없으면 검증된 기본값을 쓴다.
+    "-m",
+    employee.model ?? DRIVER_MODEL_OPTIONS.codex[0].value,
     ...buildMcpConfigFlags(EMPLOYEE_MCP_SERVER_ENTRY, AI_CREW_SERVER_URL, ticket.id, employee.name, employee.teamId),
   ];
   void toDisallowedBashPatterns; // codex sandbox 모델에는 이 패턴을 적용할 자리가 없다 (위 주석 참고)
