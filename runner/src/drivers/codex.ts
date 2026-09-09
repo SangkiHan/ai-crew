@@ -78,9 +78,12 @@ export async function runCodexDriver(
 
   const sessionId = randomUUID();
   const fullPrompt = `${systemPrompt}\n\n${message}`;
+  // PROMPT를 인자로 넘기지 않고 stdin으로 흘려보낸다 - Windows에서 codex는 npm이 만든
+  // codex.cmd(배치 셸)로 실행되는데, 개행이 포함된 긴 인자를 cross-spawn으로 넘기면 cmd.exe의
+  // 인자 파싱이 깨져서 이 뒤에 오는 -s/-m 같은 플래그가 통째로 무시된다 (실제로 재현/확인함).
+  // codex exec는 PROMPT 인자가 없으면 stdin에서 읽는다 - 공식 동작이라 안전하다.
   const args = [
     "exec",
-    fullPrompt,
     "--json",
     "-C",
     cwd,
@@ -100,8 +103,9 @@ export async function runCodexDriver(
 
   let failureText = "";
   const success = await new Promise<boolean>((resolve) => {
-    const child = spawn("codex", args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn("codex", args, { cwd, stdio: ["pipe", "pipe", "pipe"] });
     writeDriverPid(ticket.id, child.pid).catch(() => {});
+    child.stdin!.end(fullPrompt);
 
     let buffer = "";
     let stderr = "";

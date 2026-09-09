@@ -163,9 +163,12 @@ export async function runManagerCodex(
 ): Promise<ManagerResult> {
   const prefix = `mcp_servers.${MCP_SERVER_NAME}`;
   const safeEntry = MCP_SERVER_ENTRY.replace(/\\/g, "/");
+  const fullPrompt = `${systemPrompt}\n\n${message}`;
+  // PROMPT를 인자로 넘기지 않고 stdin으로 흘려보낸다 (runner/src/drivers/codex.ts와 동일한 이유:
+  // 여러 줄 프롬프트를 인자로 넘기면 Windows의 codex.cmd 배치 셸을 통해 실행될 때 cmd.exe가
+  // 개행을 명령 경계로 오인해 뒤에 오는 -s/-m 플래그가 통째로 무시된다).
   const args = [
     "exec",
-    `${systemPrompt}\n\n${message}`,
     "--json",
     "-C",
     MANAGER_CWD,
@@ -197,8 +200,9 @@ export async function runManagerCodex(
   // 한다 - agent_message 이벤트가 여러 번 올 수 있어 마지막 것(가장 완성된 응답)을 쓴다.
   let lastAgentMessage = "";
   const success = await new Promise<boolean>((resolve) => {
-    const child = spawn("codex", args, { cwd: MANAGER_CWD, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn("codex", args, { cwd: MANAGER_CWD, stdio: ["pipe", "pipe", "pipe"] });
     writeDriverPid(managerPidKey(teamId), child.pid).catch(() => {});
+    child.stdin!.end(fullPrompt);
 
     let buffer = "";
     let stderr = "";
